@@ -1,0 +1,20 @@
+# --- Python Essentials ---
+__pycache__/
+*.py[cod]
+DocuGyanEnv/
+.venv/
+
+# --- Project Secrets & Logs ---
+.env
+.env/*
+*.log
+
+# --- Django Essentials ---
+db.sqlite3
+static/
+media/
+
+# --- IDEs ---
+.vscode/
+.idea/
+.DS_Store
