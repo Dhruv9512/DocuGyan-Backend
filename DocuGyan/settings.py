@@ -14,22 +14,18 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 from kombu import Queue
+import dj_database_url
 load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
-
-# SECURITY WARNING: keep the secret key used in production secret!
+# Load environment variables
 SECRET_KEY = os.environ.get("SECRET_KEY")
-
-# SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DEBUG","False") == "True"
-REDIS_HOST = os.environ.get("REDIS_HOST", "127.0.0.1")
-REDIS_PORT = os.environ.get("REDIS_PORT", "6379")
+BLOB_READ_WRITE_TOKEN = os.environ.get("BLOB_READ_WRITE_TOKEN")
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL")
 
 
 ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "127.0.0.1").split(",")
@@ -56,6 +52,9 @@ INSTALLED_APPS = [
     # Custom apps
     'DocuAgent',
     'DocuChat',
+
+    # Package apps
+    'docu_model'
 
 ]
 
@@ -95,13 +94,12 @@ ASGI_APPLICATION = 'DocuGyan.asgi.application'
 
 
 # Database
-# https://docs.djangoproject.com/en/4.2/ref/settings/#databases
-
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    "default": dj_database_url.parse(
+        os.environ.get("DATABASE_URL"),
+        conn_max_age=600,
+        ssl_require=True
+    )
 }
 
 
@@ -165,7 +163,7 @@ CHANNEL_LAYERS = {
 
 
 # --- CELERY SETTINGS ---
-CELERY_BROKER_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"
+CELERY_BROKER_URL = CELERY_BROKER_URL
 CELERY_RESULT_BACKEND = None
 
 CELERY_ACCEPT_CONTENT = ['json']
