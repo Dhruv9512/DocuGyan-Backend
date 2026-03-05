@@ -1,6 +1,6 @@
 from celery import shared_task
 from .models import DocuProcess
-from .agents.supervisor.graph import SupervisorAgent 
+from .agents import SupervisorAgent
 
 @shared_task
 def run_agentic_pipeline_task(project_id, reference_file_urls):

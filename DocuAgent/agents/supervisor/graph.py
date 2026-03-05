@@ -3,8 +3,8 @@ from langgraph.graph import StateGraph, END
 from langchain_core.prompts import PromptTemplate
 
 # Import your extraction/ingestion tools
-from ...extraction import DocumentExtractor
-from ...ingestion import VectorDBIngestor
+from DocuAgent.extraction import DocumentExtractor
+from DocuAgent.ingestion import VectorDBIngestor
 
 # ==========================================
 # 1. Define the Graph State
