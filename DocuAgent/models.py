@@ -1,1 +1,1 @@
-from docu_model import *
+from docu_model.models import *

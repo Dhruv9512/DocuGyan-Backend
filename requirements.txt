@@ -36,3 +36,8 @@ qdrant-client==1.17.0
 # --- Environment & Utilities ---
 python-dotenv==1.2.1
 requests==2.32.5
+
+
+
+# Adding shared model
+git+https://github.com/dhruv9512/docugyan-shared-models.git@main#egg=docugyan-shared-models
