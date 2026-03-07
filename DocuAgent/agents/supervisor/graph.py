@@ -1,5 +1,6 @@
-from typing import TypedDict, List
+from typing import TypedDict, List, Annotated
 from langgraph.graph import StateGraph, END
+from langgraph.graph.message import add_messages
 from langchain_core.prompts import PromptTemplate
 
 # Import your extraction/ingestion tools
@@ -11,7 +12,8 @@ from DocuAgent.ingestion import VectorDBIngestor
 # ==========================================
 class AgentState(TypedDict):
     project_id: str
-    chosen_strategy: str  
+    chosen_strategy: str
+    messages: Annotated[list, add_messages]
 
 # ==========================================
 # 2. The Supervisor Agent Class
