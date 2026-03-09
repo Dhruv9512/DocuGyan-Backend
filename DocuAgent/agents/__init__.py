@@ -1,5 +1,2 @@
-from .supervisor.graph import (
+from .supervisor.graph import build_supervisor_agent
 
-SupervisorAgent,
-
-)

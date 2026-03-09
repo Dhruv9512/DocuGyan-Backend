@@ -1,6 +1,6 @@
 import os
 
-class DocumentExtractor:
+class DocuExtractor:
     """
     Responsible solely for downloading files and extracting raw text/markdown.
     """

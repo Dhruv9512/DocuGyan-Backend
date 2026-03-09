@@ -45,13 +45,9 @@ class DocuProcessView(APIView):
 
         # 4. Trigger Celery Task
         task = run_agentic_pipeline_task.delay(
-            project_id=project_id
+            project_id=project_id,
+            user_uuid=user_uuid
         )
-
-        # 5. Save the task_id back to the record
-        docu_process.task_id = task.id
-        docu_process.status = DocuProcess.StatusChoices.PROCESSING
-        docu_process.save(update_fields=['task_id', 'status'])
 
         return Response({
             "message": "Document processing started successfully.",

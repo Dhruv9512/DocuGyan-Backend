@@ -1,30 +1,31 @@
+# tasks.py — error handling lives here
 from celery import shared_task
 from .models import DocuProcess
-from .agents import SupervisorAgent
+from .agents import build_supervisor_agent
+from DocuGyan.celery import stop_task
 
-@shared_task
-def run_agentic_pipeline_task(project_id, reference_file_urls):
-    """
-    Phase 1: Agentic Ingestion Pipeline
-    """
+
+@shared_task(bind=True, name="run_agentic_pipeline_task")
+def run_agentic_pipeline_task(self, project_id, user_uuid):
+    """Agentic Ingestion Pipeline"""
     docu_process = DocuProcess.objects.get(project_id=project_id)
     docu_process.status = DocuProcess.StatusChoices.PROCESSING
-    docu_process.save(update_fields=['status'])
-    
+    docu_process.task_id = self.request.id
+    docu_process.save(update_fields=['status', 'task_id'])
+
     try:
-        # 1. Initialize the Supervisor Agent
-        supervisor_agent = SupervisorAgent()
-        
-        # 2. Run the graph! 
-        final_state = supervisor_agent.run(project_id=project_id, file_urls=reference_file_urls)
-        
-        print(f"Graph finished using strategy: {final_state.get('chosen_strategy')}")
-        
-        # 3. Mark as completed
+        result = build_supervisor_agent(project_id, user_uuid)
+
         docu_process.status = DocuProcess.StatusChoices.COMPLETED
-        docu_process.save(update_fields=['status'])
-        
+        docu_process.metadata = {
+            "rag_strategy": result.get("rag_strategy"),
+            "refined_questions": result.get("refined_questions"),
+        }
+        docu_process.save(update_fields=['status', 'metadata'])
+
     except Exception as e:
         docu_process.status = DocuProcess.StatusChoices.FAILED
-        docu_process.save(update_fields=['status'])
+        docu_process.error_message = str(e)
+        docu_process.save(update_fields=['status', 'error_message'])
+        stop_task(self.request.id)
         raise e
