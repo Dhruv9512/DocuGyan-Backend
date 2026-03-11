@@ -49,6 +49,10 @@ class DocuProcessView(APIView):
             user_uuid=user_uuid
         )
 
+        docu_process.task_id = task.id
+        docu_process.status = DocuProcess.StatusChoices.PROCESSING
+        docu_process.save(update_fields=['task_id', 'status'])
+
         return Response({
             "message": "Document processing started successfully.",
             "project_id": project_id,

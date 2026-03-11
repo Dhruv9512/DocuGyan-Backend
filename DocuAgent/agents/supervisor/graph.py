@@ -3,8 +3,9 @@ from langgraph.graph import StateGraph, END
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 # Import utility and ingestion classes
-from DocuAgent.utils import DocuExtractor
+from DocuAgent.utils import DocuExtractor, QuestionRefiner
 from DocuAgent.ingestion import VectorDBIngestor
+
 
 # modules import
 from DocuAgent.models import DocuProcess
@@ -15,6 +16,7 @@ from DocuAgent.agents.schemas import (
     RAGClassification,
     ExtractedDocument,
 )
+
 from DocuAgent.agents.supervisor.prompts import (
     CLASSIFY_RAG_PROMPT,
     REFINE_QUESTIONS_PROMPT,
@@ -38,6 +40,8 @@ class SupervisorAgent:
         )
         self.llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
         self.graph = self._build_graph()
+        self.extractor = DocuExtractor()
+        self.question_refiner = QuestionRefiner()
 
     # ==========================================
     # Graph Construction
@@ -68,18 +72,21 @@ class SupervisorAgent:
     # ==========================================
     # Nodes
     # ==========================================
-
-    def extract_documents(self, state: SupervisorState) -> dict:
-        """Deterministic node: extract text from all file URLs."""
-        extractor = DocuExtractor()
-        extracted = []
-        for url in state["reference_urls"]:
-            content = extractor.extract_from_url(url)
-            file_type = extractor._get_file_extension(url)
-            extracted.append(ExtractedDocument(
-                url=url, content=content, file_type=file_type
-            ))
-        return {"extracted_docs": extracted}
+    def extract_documents(self, state):
+        urls = state["reference_urls"]
+        original_questions = state["original_questions"]
+        # Send each URL to the worker node
+        send_states = [{"url": url} for url in urls]
+        # Use LangGraph's Send API to dispatch
+        extracted_results = self.graph.send("extract_single_url_worker", send_states)
+        # Aggregate results
+        extracted_docs = [result["extracted_doc"] for result in extracted_results]
+        # Refine questions (add your logic)
+        refined_questions = self.question_refiner.refine(original_questions)
+        return {
+            "extracted_docs": extracted_docs,
+            "refined_questions": refined_questions,
+        }
 
     def classify_rag_strategy(self, state: SupervisorState) -> dict:
         """For now, always use vector RAG."""
@@ -99,12 +106,7 @@ class SupervisorAgent:
 
     def vector_rag_ingest(self, state: SupervisorState) -> dict:
         """Deterministic node: chunk → embed → store in vector DB."""
-        ingestor = VectorDBIngestor(collection_name=self.project_id)
-        for doc in state["extracted_docs"]:
-            ingestor.process_and_ingest(
-                doc.content,
-                metadata={"url": doc.url, "file_type": doc.file_type},
-            )
+        pass
         return {"ingestion_done": True}
 
     def graph_rag_ingest(self, state: SupervisorState) -> dict:
@@ -117,6 +119,15 @@ class SupervisorAgent:
         # TODO: implement VectorlessIngestor
         return {"ingestion_done": True}
 
+    # ==========================================
+    # Worker Nodes
+    # =========================================
+    def extract_single_url_worker(self, state):
+        # This is a worker node that can be called by the main graph to extract individual referance documents in parallel if needed.
+        url = state["url"]
+        content = self.extractor.extract_from_url(url)
+        file_type = self.extractor._get_file_extension(url)
+        return {"extracted_doc": ExtractedDocument(url=url, content=content, file_type=file_type)}
     
     # ==========================================
     # Entry Point
@@ -133,7 +144,7 @@ class SupervisorAgent:
             "rag_strategy": "",
             "ingestion_done": False,
             "rag_reasoning": "",
-            "original_questions": [],
+            "original_questions": self.base_instance.question_urls if self.base_instance.question_urls else self.base_instance.text_questions,
             "refined_questions": [],
         }
         return self.graph.invoke(initial_state)
@@ -153,8 +164,29 @@ def build_supervisor_agent(project_id: str, user_uuid: str):
         project_id (str): The unique identifier for the document processing project.
         user_uuid (str): The unique identifier for the user who initiated the process.
     """
-    supervisor = SupervisorAgent(project_id=project_id, user_uuid=user_uuid)
-    return supervisor.run()
+    try:
+        # Initialize and run the agent
+        supervisor = SupervisorAgent(project_id=project_id, user_uuid=user_uuid)
+        result = supervisor.run()
+
+        # Mark as completed on success
+        docu_process = DocuProcess.objects.get(project_id=project_id, user_uuid=user_uuid)
+        docu_process.status = DocuProcess.StatusChoices.COMPLETED
+        docu_process.metadata = {
+            "rag_strategy": result.get("rag_strategy"),
+            "refined_questions": result.get("refined_questions"),
+        }
+        docu_process.save(update_fields=['status', 'metadata'])
+        
+        return result
+
+    except Exception as e:
+        # Handle domain-level failures and record them
+        docu_process.status = DocuProcess.StatusChoices.PENDING
+        docu_process.error_message = str(e)
+        docu_process.save(update_fields=['status', 'error_message'])
+        
+        raise e
 
 
 

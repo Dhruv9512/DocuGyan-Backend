@@ -15,6 +15,7 @@ import os
 from dotenv import load_dotenv
 from kombu import Queue
 import dj_database_url
+from datetime import timedelta
 load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -32,8 +33,21 @@ ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "127.0.0.1").split(",")
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
 
-# Application definition
+# Brevo
+EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "anymail.backends.sendinblue.EmailBackend")
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL")
+ANYMAIL = {
+    "SENDINBLUE_API_KEY": os.environ.get("BREVO_API_KEY"),
+}
 
+# SIGNING_KEY for JWT
+SIGNING_KEY = os.environ.get("JWT_SECRET_KEY", SECRET_KEY)
+
+# Google OAuth Client ID
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+
+
+# Application definition
 INSTALLED_APPS = [
     'daphne',
     'django.contrib.admin',
@@ -48,13 +62,16 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_celery_results',
     'channels',
+    'anymail',
 
     # Custom apps
     'DocuAgent',
     'DocuChat',
 
     # Package apps
-    'docu_model'
+    'docu_model',
+    'users',
+    'core',
 
 ]
 
@@ -212,3 +229,19 @@ CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_ACKS_LATE = True
 CELERY_TASK_ACKS_LATE = True
 CELERY_TASK_REJECT_ON_WORKER_LOST = True
+
+
+AUTH_USER_MODEL = 'docu_model.CustomUser'
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': True,
+    'SIGNING_KEY': SIGNING_KEY, 
+    'AUTH_COOKIE': 'access',
+    'AUTH_COOKIE_REFRESH': 'refresh',
+    'USER_ID_FIELD': 'user_uuid',  
+    'USER_ID_CLAIM': 'user_uuid',  
+}

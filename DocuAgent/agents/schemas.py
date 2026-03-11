@@ -1,5 +1,9 @@
-from typing import Literal
+from ast import operator
+from typing import Literal, Annotated
 from pydantic import BaseModel, Field
+
+
+# LangGraph imports
 from langgraph.graph import MessagesState
 
 
@@ -39,7 +43,7 @@ class SupervisorState(MessagesState):
     project_id: str
     user_uuid: str
     reference_urls: list[str]
-    extracted_docs: list[ExtractedDocument]
+    extracted_docs: Annotated[list[ExtractedDocument], operator.add]
     rag_strategy: str
     rag_reasoning: str
     ingestion_done: bool

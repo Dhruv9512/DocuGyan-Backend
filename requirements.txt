@@ -6,6 +6,8 @@ django-cors-headers==4.9.0
 asgiref==3.11.1
 sqlparse==0.5.5
 psycopg2-binary==2.9.11
+djangorestframework-simplejwt==5.5.1
+pyjwt==2.11.0
 
 # --- Background Tasks & Caching ---
 celery==5.6.2
@@ -37,7 +39,11 @@ qdrant-client==1.17.0
 python-dotenv==1.2.1
 requests==2.32.5
 
+# Brevo SMTP credentials (for email functionality)
+django-anymail==14.0
 
+# Google OAuth dependencies
+google-auth==2.20.0
 
 # Adding shared model
 git+https://github.com/dhruv9512/docugyan-shared-models.git@main#egg=docugyan-shared-models
