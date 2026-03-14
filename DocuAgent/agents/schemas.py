@@ -29,12 +29,6 @@ class DomainClassification(BaseModel):
     )
 
 
-class ExtractedDocument(BaseModel):
-    url: str
-    content: str
-    file_type: str
-
-
 # ==========================================
 # Graph States (one per agent)
 # ==========================================
@@ -43,30 +37,30 @@ class SupervisorState(MessagesState):
     project_id: str
     user_uuid: str
     reference_urls: list[str]
-    extracted_docs: Annotated[list[ExtractedDocument], operator.add]
+    extracted_doc_blob_url: Annotated[list[str], operator.add]
     rag_strategy: str
     rag_reasoning: str
     ingestion_done: bool
     original_questions: list[str]
-    refined_questions: list[str]
+    refined_questions_blob_url: list[str]
 
 
 class AcademicAgentState(MessagesState):
     """State for the Academic domain agent."""
     project_id: str
-    extracted_docs: list[ExtractedDocument]
+    extracted_doc_blob_url: list[str]
     # academic-specific fields...
 
 
 class FinancialAgentState(MessagesState):
     """State for the Financial domain agent."""
     project_id: str
-    extracted_docs: list[ExtractedDocument]
+    extracted_doc_blob_url: list[str]
     # financial-specific fields...
 
 
 class AuditAgentState(MessagesState):
     """State for the Audit domain agent."""
     project_id: str
-    extracted_docs: list[ExtractedDocument]
+    extracted_doc_blob_url: list[str]
     # audit-specific fields...

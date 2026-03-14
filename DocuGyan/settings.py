@@ -173,7 +173,10 @@ CACHES = {
 # --- WEBSOCKET / CHANNELS SETTINGS ---
 CHANNEL_LAYERS = {
     "default": {
-        "BACKEND": "channels.layers.InMemoryChannelLayer",
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [CELERY_BROKER_URL],
+        },
     },
 }
 

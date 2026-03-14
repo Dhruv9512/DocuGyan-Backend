@@ -45,5 +45,9 @@ django-anymail==14.0
 # Google OAuth dependencies
 google-auth==2.20.0
 
+
+# Extraction related dependencies
+pypdf2==3.0.1
+
 # Adding shared model
 git+https://github.com/dhruv9512/docugyan-shared-models.git@main#egg=docugyan-shared-models

@@ -5,7 +5,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 # Import utility and ingestion classes
 from DocuAgent.utils import DocuExtractor, QuestionRefiner
 from DocuAgent.ingestion import VectorDBIngestor
-
+from DocuAgent.websocket.notifier import Notifier
 
 # modules import
 from DocuAgent.models import DocuProcess
@@ -13,8 +13,7 @@ from DocuAgent.models import DocuProcess
 # Import graph states and pydantic models
 from DocuAgent.agents.schemas import (
     SupervisorState,
-    RAGClassification,
-    ExtractedDocument,
+    RAGClassification
 )
 
 from DocuAgent.agents.supervisor.prompts import (
@@ -39,9 +38,10 @@ class SupervisorAgent:
             project_id=project_id, user_uuid=user_uuid
         )
         self.llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
-        self.graph = self._build_graph()
         self.extractor = DocuExtractor()
         self.question_refiner = QuestionRefiner()
+        self.notifier = Notifier(project_id)  # Initialize Notifier
+        self.graph = self._build_graph()
 
     # ==========================================
     # Graph Construction
@@ -72,7 +72,8 @@ class SupervisorAgent:
     # ==========================================
     # Nodes
     # ==========================================
-    def extract_documents(self, state):
+    def extract_documents(self, state: SupervisorState):
+        self.notifier.send_message("Starting document extraction...")
         urls = state["reference_urls"]
         original_questions = state["original_questions"]
         # Send each URL to the worker node
@@ -80,15 +81,18 @@ class SupervisorAgent:
         # Use LangGraph's Send API to dispatch
         extracted_results = self.graph.send("extract_single_url_worker", send_states)
         # Aggregate results
-        extracted_docs = [result["extracted_doc"] for result in extracted_results]
+        extracted_doc_blob_url = [result["extracted_doc_blob_url"] for result in extracted_results]
+        
+        self.notifier.send_message(f"Extracted {len(extracted_doc_blob_url)} docs. Refining questions.")
         # Refine questions (add your logic)
-        refined_questions = self.question_refiner.refine(original_questions)
+        refined_questions_blob_url = self.question_refiner.refine(original_questions)
         return {
-            "extracted_docs": extracted_docs,
-            "refined_questions": refined_questions,
+            "extracted_doc_blob_url": extracted_doc_blob_url,
+            "refined_questions_blob_url": refined_questions_blob_url,
         }
 
     def classify_rag_strategy(self, state: SupervisorState) -> dict:
+        self.notifier.send_message("Determining best RAG strategy...")
         """For now, always use vector RAG."""
         return {
             "rag_strategy": "vector",
@@ -105,16 +109,19 @@ class SupervisorAgent:
         return strategy_map[state["rag_strategy"]]
 
     def vector_rag_ingest(self, state: SupervisorState) -> dict:
+        self.notifier.send_message("Chunking and embedding documents into Vector DB...")
         """Deterministic node: chunk → embed → store in vector DB."""
         pass
         return {"ingestion_done": True}
 
     def graph_rag_ingest(self, state: SupervisorState) -> dict:
+        self.notifier.send_message("Extracting entities/relations and storing in graph DB...")
         """Deterministic node: extract entities/relations → store in graph DB."""
         # TODO: implement GraphDBIngestor
         return {"ingestion_done": True}
 
     def vectorless_ingest(self, state: SupervisorState) -> dict:
+        self.notifier.send_message("Storing raw text with keyword index...")
         """Deterministic node: store raw text with keyword index."""
         # TODO: implement VectorlessIngestor
         return {"ingestion_done": True}
@@ -122,12 +129,11 @@ class SupervisorAgent:
     # ==========================================
     # Worker Nodes
     # =========================================
-    def extract_single_url_worker(self, state):
+    def extract_single_url_worker(self, state:SupervisorState):
         # This is a worker node that can be called by the main graph to extract individual referance documents in parallel if needed.
         url = state["url"]
-        content = self.extractor.extract_from_url(url)
-        file_type = self.extractor._get_file_extension(url)
-        return {"extracted_doc": ExtractedDocument(url=url, content=content, file_type=file_type)}
+        blob_url = self.extractor.extract_from_url(url)
+        return {"extracted_doc_blob_url": blob_url}
     
     # ==========================================
     # Entry Point
@@ -140,12 +146,12 @@ class SupervisorAgent:
             "user_uuid": self.user_uuid,
             "messages": [],
             "reference_urls": self.base_instance.reference_urls,
-            "extracted_docs": [],
+            "extracted_docs_blob_urls": [],
             "rag_strategy": "",
             "ingestion_done": False,
             "rag_reasoning": "",
             "original_questions": self.base_instance.question_urls if self.base_instance.question_urls else self.base_instance.text_questions,
-            "refined_questions": [],
+            "refined_questions_blob_url": [],
         }
         return self.graph.invoke(initial_state)
 
@@ -164,7 +170,11 @@ def build_supervisor_agent(project_id: str, user_uuid: str):
         project_id (str): The unique identifier for the document processing project.
         user_uuid (str): The unique identifier for the user who initiated the process.
     """
+    notifier = Notifier(project_id)  # Initialize Notifier for high-level events
+
     try:
+        notifier.send_message("Initializing Supervisor Agent pipeline.")
+
         # Initialize and run the agent
         supervisor = SupervisorAgent(project_id=project_id, user_uuid=user_uuid)
         result = supervisor.run()
@@ -178,16 +188,19 @@ def build_supervisor_agent(project_id: str, user_uuid: str):
         }
         docu_process.save(update_fields=['status', 'metadata'])
         
+        # Notify completion
+        notifier.send_completed(final_result={"extracted_docs_blob_urls": result.get("extracted_docs_blob_urls"), "refined_questions_blob_url": result.get("refined_questions_blob_url")})
+
         return result
 
     except Exception as e:
         # Handle domain-level failures and record them
+        docu_process = DocuProcess.objects.get(project_id=project_id, user_uuid=user_uuid)
         docu_process.status = DocuProcess.StatusChoices.PENDING
         docu_process.error_message = str(e)
         docu_process.save(update_fields=['status', 'error_message'])
         
+        # Notify error
+        notifier.send_error(str(e))
+
         raise e
-
-
-
-    

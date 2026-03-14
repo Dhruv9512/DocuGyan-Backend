@@ -7,17 +7,19 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'DocuGyan.settings')
 django_asgi_app = get_asgi_application()
 
 from channels.routing import ProtocolTypeRouter, URLRouter
-from channels.auth import AuthMiddlewareStack
-import DocuAgent.routing
+import DocuAgent.websocket.routing
 import DocuChat.routing
+from core.middleware import JWTAuthWebSocketMiddleware
+
+
 application = ProtocolTypeRouter({
     # Handle standard HTTP requests
     "http": django_asgi_app,
     
     # Handle WebSocket traffic
-    "websocket": AuthMiddlewareStack(
+    "websocket": JWTAuthWebSocketMiddleware(
         URLRouter(
-            DocuAgent.routing.websocket_urlpatterns +
+            DocuAgent.websocket.routing.websocket_urlpatterns +
             DocuChat.routing.websocket_urlpatterns
         )
     ),
