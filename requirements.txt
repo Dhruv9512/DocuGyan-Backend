@@ -47,7 +47,9 @@ google-auth==2.20.0
 
 
 # Extraction related dependencies
-pypdf2==3.0.1
+pymupdf==1.27.2
+llama-cloud==1.6.0
+
 
 # Adding shared model
 git+https://github.com/dhruv9512/docugyan-shared-models.git@main#egg=docugyan-shared-models

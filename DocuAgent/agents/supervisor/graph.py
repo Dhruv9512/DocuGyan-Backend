@@ -3,7 +3,7 @@ from langgraph.graph import StateGraph, END
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 # Import utility and ingestion classes
-from DocuAgent.utils import DocuExtractor, QuestionRefiner
+from DocuAgent.utils import QuestionRefiner,build_DocuExtractor
 from DocuAgent.ingestion import VectorDBIngestor
 from DocuAgent.websocket.notifier import Notifier
 
@@ -38,9 +38,8 @@ class SupervisorAgent:
             project_id=project_id, user_uuid=user_uuid
         )
         self.llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
-        self.extractor = DocuExtractor()
         self.question_refiner = QuestionRefiner()
-        self.notifier = Notifier(project_id)  # Initialize Notifier
+        self.notifier = Notifier(project_id)  
         self.graph = self._build_graph()
 
     # ==========================================
@@ -132,7 +131,7 @@ class SupervisorAgent:
     def extract_single_url_worker(self, state:SupervisorState):
         # This is a worker node that can be called by the main graph to extract individual referance documents in parallel if needed.
         url = state["url"]
-        blob_url = self.extractor.extract_from_url(url)
+        blob_url = build_DocuExtractor(project_id=self.project_id, url=url)
         return {"extracted_doc_blob_url": blob_url}
     
     # ==========================================

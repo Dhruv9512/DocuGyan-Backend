@@ -1,5 +1,4 @@
-from ast import operator
-from typing import Literal, Annotated
+from typing import Literal
 from pydantic import BaseModel, Field
 
 
@@ -37,7 +36,7 @@ class SupervisorState(MessagesState):
     project_id: str
     user_uuid: str
     reference_urls: list[str]
-    extracted_doc_blob_url: Annotated[list[str], operator.add]
+    extracted_doc_blob_url: list[str]
     rag_strategy: str
     rag_reasoning: str
     ingestion_done: bool

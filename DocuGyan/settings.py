@@ -46,6 +46,8 @@ SIGNING_KEY = os.environ.get("JWT_SECRET_KEY", SECRET_KEY)
 # Google OAuth Client ID
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
 
+# LlamaParse API Key
+LLAMAPARSE_API_KEY = os.environ.get("LLAMAPARSE_API_KEY")
 
 # Application definition
 INSTALLED_APPS = [
