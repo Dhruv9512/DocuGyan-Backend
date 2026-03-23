@@ -23,11 +23,7 @@ class DocuExtractor:
     def __init__(self, project_id: str, file_url: str):
         self.project_id = project_id
         self.file_url = file_url
-
-        # Load tokens securely from Django settings
-        self.blob_token = getattr(settings, 'BLOB_READ_WRITE_TOKEN', None)
-        self.llamaparse_client = LlamaCloud(api_key=settings.llamaparse_key)
-    
+        self.blob_token = settings.VERCEL_BLOB_TOKEN    
 
     def extract_from_url(self) -> str:
         """

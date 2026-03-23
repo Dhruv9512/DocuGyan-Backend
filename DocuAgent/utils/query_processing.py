@@ -3,7 +3,7 @@ import logging
 import requests
 import concurrent.futures
 from pydantic import BaseModel, Field
-from langchain_openai import ChatOpenAI
+
 from langchain_core.prompts import ChatPromptTemplate
 
 # Import your factory function
@@ -30,8 +30,6 @@ class QuestionRefiner:
         self.extracted_md_url = None
         self.refined_md_url = None
         
-        # Using a low temperature so the LLM doesn't hallucinate
-        self.llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
 
     def build(self) -> dict:
         logger.info(f"Building QuestionRefiner pipeline for project {self.project_id}...")
