@@ -97,3 +97,7 @@ class DocuExtractorAgent:
         return graph.compile()
     
 
+
+# build DocuExtractor and QuestionRefiner
+def build_docu_extractor_agent(project_id: str) -> DocuExtractorAgent:
+    return DocuExtractorAgent(project_id=project_id).build_graph()

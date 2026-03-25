@@ -7,18 +7,24 @@ from urllib.parse import urlparse, unquote
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from django.conf import settings
+import re
 
 import fitz  # PyMuPDF
 from pathlib import Path
-from llama_cloud import LlamaCloud
+
+# Import LLM Utility for Vision Calls
+from DocuAgent.utils.llm_calls import LLMUtility
+from DocuAgent.utils.utility import upload_to_vercel_blob
+
+
 
 # Initialize industry-standard logger
 logger = logging.getLogger(__name__)
 
 class DocuExtractor:
     """
-    Responsible for securely streaming files, executing hybrid extraction 
-    (Local PyMuPDF vs Cloud LlamaParse), and uploading to Vercel Blob.
+    Responsible for securely streaming files, executing intelligent hybrid extraction 
+    (Local PyMuPDF vs Vision LLM), and uploading to Vercel Blob.
     """
     def __init__(self, project_id: str, file_url: str):
         self.project_id = project_id
@@ -54,149 +60,198 @@ class DocuExtractor:
         md_filename = f"{base_name}.md"
         blob_path = f"{self.project_id}/temp/{md_filename}"
 
-        return self._upload_to_vercel_blob(blob_path, extracted_text)
+        return upload_to_vercel_blob(blob_path=blob_path, content=extracted_text,content_type="text/markdown")
 
     # ==========================================
-    # The Hybrid PDF Router
+    # The Intelligent PDF Router
     # ==========================================
-
     def _extract_pdf(self) -> str:
         pdf_name = self._get_file_name(self.file_url)
         logger.info(f"Streaming {pdf_name} to disk (RAM protection active)...")
         
-        # 1. Stream download to a temporary file on disk
         with tempfile.NamedTemporaryFile(delete=True, suffix=".pdf") as temp_pdf:
             with self.session.get(self.file_url, stream=True, timeout=30) as r:
                 r.raise_for_status()
                 for chunk in r.iter_content(chunk_size=8192):
-                    temp_pdf.write(chunk)
+                    if chunk:
+                        temp_pdf.write(chunk)
             temp_pdf.flush()
             
-            is_complex = False
-            extracted_text = None
-
-            # 2. Open locally just to check and/or extract
             with fitz.open(temp_pdf.name) as doc:
-                is_complex = self._is_complex_document(doc)
+                total_pages = len(doc)
                 
-                # If it's simple, extract it right now while it's open
-                if not is_complex:
-                    logger.info(f"Digital text detected. Routing to local PyMuPDF extraction...")
-                    extracted_text = self._extract_local_pdf(doc, pdf_name)
+                # 1. THE PLACEHOLDER ARRAY: Guarantees perfect order
+                # Creates an array like: [None, None, None, None]
+                extracted_pages = [None] * total_pages 
+                
+                vision_batch_images = []
+                vision_batch_indices = []
+                BATCH_SIZE = 3 
+                
+                for page_num, page in enumerate(doc):
                     
-            # --- IMPORTANT: THE 'WITH' BLOCK ENDS HERE ---
-            # PyMuPDF is completely wiped from RAM at this exact line.
-            
-            # 3. Execute LlamaParse if needed (with zero PyMuPDF RAM overhead)
-            if is_complex:
-                logger.warning(f"Complex elements detected in {pdf_name}. Routing to LlamaParse Vision API...")
-                # The temp_pdf file is still safely on the disk!
-                return self._extract_with_vision_api(temp_pdf.name)
+                    if self._needs_vision_llm(page):
+                        # Add scan to the batch, remembering its EXACT page number (index)
+                        pix = page.get_pixmap(dpi=150)
+                        vision_batch_images.append(pix.tobytes("jpeg"))
+                        vision_batch_indices.append(page_num)
+                        
+                        # Flush batch if it's full
+                        if len(vision_batch_images) >= BATCH_SIZE:
+                            self._process_and_place_pdf_batch(
+                                vision_batch_images, vision_batch_indices, extracted_pages
+                            )
+                            vision_batch_images.clear()
+                            vision_batch_indices.clear()
+                            
+                    else:
+                        # 2. FLUSH ON TRANSITION: 
+                        # If we were batching scans, but just hit a digital page, 
+                        # we must flush the scans immediately to prevent non-consecutive 
+                        # pages (like 1, 5, 9) from being merged into one block.
+                        if vision_batch_images:
+                            self._process_and_place_pdf_batch(
+                                vision_batch_images, vision_batch_indices, extracted_pages
+                            )
+                            vision_batch_images.clear()
+                            vision_batch_indices.clear()
+
+                        # 3. Process digital page instantly and put in exact slot
+                        logger.info(f"Page {page_num + 1}: Digital Text.")
+                        extracted_pages[page_num] = (
+                            f"## Page {page_num + 1}\n"
+                            f"{self._extract_page_local(page)}\n"
+                            f"---\n"
+                        )
                 
-            # Return the locally extracted text if it wasn't complex
-            return extracted_text
+                # 4. END OF DOCUMENT: Flush any remaining scans in the queue
+                if vision_batch_images:
+                    self._process_and_place_pdf_batch(
+                        vision_batch_images, vision_batch_indices, extracted_pages
+                    )
+                    
+            # 5. Build the final perfectly-ordered document
+            final_markdown = f"# {pdf_name}\n\n"
+            for page_content in extracted_pages:
+                if page_content: # Ignore empty slots from batch merging
+                    final_markdown += page_content
+                    
+            return final_markdown
 
-    def _is_complex_document(self, doc) -> bool:
+    def _process_and_place_pdf_batch(self, images: list, indices: list, extracted_pages: list):
         """
-        Samples the start, middle, and end of the document to detect low text 
-        density (scans) or heavy image use (formulas/diagrams).
+        Processes a batch of images via LLM, parses the page-by-page output, 
+        and places each page's result exactly where it belongs in the array.
         """
-        total_pages = len(doc)
-        if total_pages == 0: return False
-
-        pages_to_check = [0]
-        if total_pages > 1: pages_to_check.append(total_pages // 2)
-        if total_pages > 2: pages_to_check.append(total_pages - 1)
-
-        complex_flags = 0
-
-        for page_num in pages_to_check:
-            page = doc[page_num]
-            text = page.get_text("text").strip()
-            images = page.get_images()
-            
-            if len(text) < 50 or len(images) > 1:
-                complex_flags += 1
-
-        return complex_flags > (len(pages_to_check) / 2)
-
-    def _extract_local_pdf(self, doc, pdf_name: str) -> str:
-        """Fast, RAM-efficient local extraction for standard digital PDFs."""
-        output_lines = [f"# {pdf_name}\n"]
-        for page_num, page in enumerate(doc):
-            text = page.get_text("text")
-            output_lines.append(f"## Page {page_num + 1}\n")
-            output_lines.append(text.strip() if text else "[No text content found]")
-            output_lines.append("\n---\n")
-            
-        return "\n".join(output_lines)
-
-    def _extract_with_vision_api(self, file_path: str) -> str:
-        """Advanced extraction for STEM documents, tables, and scans using LlamaCloud."""
-        if not self.llama_client:
-            logger.warning("No LlamaParse key found! Falling back to PyMuPDF (Expect poor quality on images).")
-            with fitz.open(file_path) as doc:
-                return self._extract_local_pdf(doc, "Fallback_Extraction")
-
-        logger.info("Uploading document to LlamaCloud for multimodal extraction...")
+        logger.info(f"Processing Vision Batch for pages: {[i+1 for i in indices]}")
         
         try:
-            # 1. Upload the temporary file to LlamaCloud
-            file_obj = self.llama_client.files.create(
-                file=Path(file_path),
-                purpose="parse"
-            )
+            # 1. Call your LLM API (Gemini/HF) with the list of images
+            extracted_text_block = LLMUtility.PDFExtractorLLM(images)
             
-            # 2. Trigger the extraction job (Agentic tier is best for complex images/tables)
-            result = self.llama_client.parsing.parse(
-                file_id=file_obj.id,
-                tier="agentic",
-                expand=["markdown"]
-            )
+            # 2. Split the LLM's response by the "## Page X" headers
+            # This regex splits the string every time it sees "## Page " followed by a number at the start of a line.
+            raw_blocks = re.split(r'(?im)^##\s*Page\s*\d+', extracted_text_block)
             
-            # 3. Format the output to exactly match the PyMuPDF local format
-            pdf_name = os.path.basename(file_path)
-            output_lines = [f"# {pdf_name} (Vision Extracted)\n"]
+            # Clean up empty strings (like any intro text the LLM added before the first header)
+            parsed_blocks = [block.strip() for block in raw_blocks if block.strip()]
             
-            # Loop through the pages returned by the API
-            for page_num, page_data in enumerate(result.markdown.pages):
-                text = page_data.markdown
+            # 3. Validation: Did the LLM give us the correct number of pages back?
+            if len(parsed_blocks) == len(indices):
+                # SUCCESS: The LLM perfectly separated the pages.
+                logger.info("LLM perfectly separated the batch pages. Mapping to array...")
+                for i, idx in enumerate(indices):
+                    page_num = idx + 1
+                    # Place the exact content into the exact array slot
+                    extracted_pages[idx] = f"## Page {page_num} (Vision Extracted)\n{parsed_blocks[i]}\n---\n"
+                    
+            else:
+                # FALLBACK: The LLM messed up the formatting (merged pages, missed a header, etc.)
+                # To prevent data loss, we dump the whole raw response into the first slot.
+                logger.warning(f"LLM format mismatch. Expected {len(indices)} blocks, got {len(parsed_blocks)}. Using fallback.")
                 
-                output_lines.append(f"## Page {page_num + 1}\n")
-                output_lines.append(text.strip() if text else "[No text content found]")
-                output_lines.append("\n---\n")
+                first_slot = indices[0]
+                if len(indices) > 1:
+                    header = f"## Pages {indices[0]+1} to {indices[-1]+1} (Vision Extracted - Format Fallback)\n"
+                else:
+                    header = f"## Page {indices[0]+1} (Vision Extracted)\n"
+                    
+                extracted_pages[first_slot] = f"{header}{extracted_text_block}\n---\n"
                 
-            return "\n".join(output_lines)
-            
+                # Empty the other slots so we don't get duplicate data
+                for idx in indices[1:]:
+                    extracted_pages[idx] = ""
+                
         except Exception as e:
-            logger.error(f"LlamaCloud extraction failed: {e}")
-            # Fallback to local extraction if the API crashes or rate-limits
-            with fitz.open(file_path) as doc:
-                return self._extract_local_pdf(doc, "Fallback_Extraction_After_API_Fail")
+            logger.error(f"Vision Batch failed for pages {indices}: {e}")
+            # If the API fails completely, insert error messages into the correct slots
+            for idx in indices:
+                extracted_pages[idx] = f"## Page {idx+1}\n[Extraction Failed: Vision API Error]\n---\n"
 
-    # ==========================================
-    # Helpers Methods
-    # ==========================================
-    def _upload_to_vercel_blob(self, blob_path: str, content: str) -> str:
-        """Uploads text content to Vercel Blob using their REST API."""
-        if not self.blob_token:
-            raise ValueError("Cannot upload: Vercel Blob token is missing.")
-
-        url = f"https://blob.vercel-storage.com/{blob_path}"
-        headers = {
-            "Authorization": f"Bearer {self.blob_token}",
-            "x-api-version": "7",         
-            "x-content-type": "text/markdown",
-        }
+    def _needs_vision_llm(self, page) -> bool:
+        """
+        Evaluates a page to see if it requires LLM Vision analysis to catch edge cases.
+        """
+        text = page.get_text("text").strip()
+        images = page.get_images()
         
-        data = content.encode('utf-8')
-        response = self.session.put(url, headers=headers, data=data, timeout=30)
-        response.raise_for_status()
+        # 1. THE BLANK PAGE CHECK
+        if len(text) < 50 and len(images) == 0:
+            return False # It's just a blank page, skip it.
+
+        # 2. THE DIGITAL FOOTER TRAP (Raised threshold)
+        if len(text) < 200 and len(images) > 0:
+            return True
+
+        # 3. THE GIANT DIAGRAM TRAP
+        if len(images) > 0:
+            page_area = page.rect.width * page.rect.height
+            if page_area == 0: return False
+            
+            image_area = 0
+            for img in page.get_image_info():
+                bbox = img["bbox"]
+                width = bbox[2] - bbox[0]
+                height = bbox[3] - bbox[1]
+                image_area += (width * height)
+                
+            if (image_area / page_area) > 0.30:
+                return True
+
+        # 4. DEFAULT: It's a normal, text-heavy digital document.
+        return False
+
+    def _extract_page_local(self, page) -> str:
+        """
+        Advanced local extraction using PyMuPDF (Tables + Markdown Layout).
+        Completely free and extremely fast.
+        """
+        lines = []
         
-        logger.info(f"Successfully uploaded to Vercel Blob: {blob_path}")
-        return response.json().get("url")
+        # EXTRACT TABLES FIRST (protects grid structure from getting mangled)
+        tables = page.find_tables()
+        if tables:
+            for table in tables:
+                lines.append(table.to_markdown())
+                lines.append("\n")
+        
+        # EXTRACT TEXT WITH LAYOUT AWARENESS
+        try:
+            # Requires PyMuPDF 1.24+ for native markdown support
+            text = page.get_text("markdown")
+            if text:
+                lines.append(text)
+        except Exception:
+            # Fallback for older PyMuPDF versions
+            lines.append(page.get_text("text"))
+            
+        content = "\n".join(lines).strip()
+        return content if content else "[Blank Page]"
 
-
+    
+    # ==========================================
+    # Standard Helpers
+    # ==========================================
     def _get_file_extension(self, url: str) -> str:
         parsed_url = urlparse(url)
         _, ext = os.path.splitext(unquote(parsed_url.path))
@@ -207,46 +262,31 @@ class DocuExtractor:
         return os.path.basename(unquote(parsed_url.path))
 
     def _extract_text(self) -> str:
-        """
-        Fetches raw text/markdown securely using a HEAD check to prevent RAM spikes,
-        and wraps it in the universal DocuGyan page format.
-        """
         file_name = self._get_file_name(self.file_url)
         logger.info(f"Extracting text file: {file_name}...")
 
-        # It is safe, so download the text normally
-        response = requests.get(self.file_url, timeout=15)
+        response = self.session.get(self.file_url, timeout=15)
         response.raise_for_status()
        
-        # Decode safely (replaces weird broken characters instead of crashing)
         raw_text = response.content.decode('utf-8', errors='replace')
 
-        # Apply the universal DocuGyan format
-        output_lines = [f"# {file_name}\n"]
-        output_lines.append("## Page 1\n")
-        output_lines.append(raw_text.strip() if raw_text else "[No text content found]")
-        output_lines.append("\n---\n")
-
+        output_lines = [
+            f"# {file_name}\n",
+            "## Page 1\n",
+            raw_text.strip() if raw_text else "[No text content found]",
+            "\n---\n"
+        ]
         return "\n".join(output_lines)
 
     def _extract_word(self) -> str:
-        return "Word extraction not yet implemented..."
+        return "Word extraction not yet implemented... (Use python-docx here)"
 
     def _extract_ppt(self) -> str:
-        return "PPT extraction not yet implemented..."
-
+        return "PPT extraction not yet implemented... (Use python-pptx here)"
 
 # ==========================================
-# Build Function (Factory Pattern)
+# Factory Function
 # ==========================================
 def build_DocuExtractor(project_id: str, url: str) -> DocuExtractor:
-    """
-    Factory function to create a DocuExtractor instance and run the extraction pipeline.
-    args:
-    - project_id: The unique identifier for the project (used for Blob pathing).
-    - url: The URL of the document to be extracted.
-    returns:
-    - The URL of the extracted Markdown file in Vercel Blob.
-    """
     app = DocuExtractor(project_id=project_id, file_url=url)
     return app.extract_from_url()

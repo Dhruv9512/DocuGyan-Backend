@@ -8,7 +8,7 @@ from DocuAgent.models import DocuProcess
 from DocuAgent.agents.schemas import SupervisorState
 
 # Import the Extractor Agent Subgraph
-from DocuAgent.agents import DocuExtractorAgent
+from DocuAgent.agents.extractor.graph import build_docu_extractor_agent
 
 class DocuSupervisorAgent:
     """
@@ -95,7 +95,7 @@ class DocuSupervisorAgent:
         graph.add_node("supervisor", self.supervisor_router)
 
         # 2. Add the Sub-Agents (Workers)
-        extractor_subgraph = DocuExtractorAgent(self.project_id).build_graph()
+        extractor_subgraph = build_docu_extractor_agent(self.project_id)
         graph.add_node("extraction_agent", extractor_subgraph)
         graph.add_node("classify_rag", self.classify_rag_strategy)
         graph.add_node("vector_rag_ingest", self.vector_rag_ingest)

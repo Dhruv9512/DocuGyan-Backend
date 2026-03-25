@@ -1,7 +1,7 @@
 # tasks.py — error handling lives here
 from celery import shared_task
 from .models import DocuProcess
-from .agents import build_docu_supervisor_agent
+from DocuAgent.agents.supervisor.graph import build_docu_supervisor_agent
 from DocuGyan.celery import stop_task
 
 
