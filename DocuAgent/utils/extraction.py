@@ -2,15 +2,10 @@
 import os
 import tempfile
 import logging
-import requests
 from urllib.parse import urlparse, unquote
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-from django.conf import settings
 import re
 
 import fitz  # PyMuPDF
-from pathlib import Path
 
 # Import LLM Utility for Vision Calls
 from DocuAgent.utils.llm_calls import LLMUtility
@@ -29,7 +24,7 @@ class DocuExtractor:
     def __init__(self, project_id: str, file_url: str):
         self.project_id = project_id
         self.file_url = file_url
-        self.blob_token = settings.VERCEL_BLOB_TOKEN    
+  
 
     def extract_from_url(self) -> str:
         """
