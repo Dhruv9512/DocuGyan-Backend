@@ -1,24 +1,20 @@
 import re
+import time
 import logging
-import requests
 import concurrent.futures
 from pydantic import BaseModel, Field
 
-from langchain_core.prompts import ChatPromptTemplate
 
-# Import your factory function
-from .extraction import build_DocuExtractor 
+# Import your Utilities!
+from DocuAgent.utils.llm_calls import DocuAgentLLMCalls
+from DocuAgent.utils.extraction import build_DocuExtractor 
+from DocuAgent.utils.utility import upload_to_vercel_blob
+
+from DocuAgent.schemas.llm_schemas import RefinedBatch
 
 logger = logging.getLogger(__name__)
 
-# ==========================================
-# Pydantic Schemas
-# ==========================================
-class RefinedQuestion(BaseModel):
-    refined_question: str = Field(description="The improved, clear, and professional version of the extracted question.")
 
-class RefinedBatch(BaseModel):
-    questions: list[RefinedQuestion]
 
 # ==========================================
 # Main Class
@@ -30,7 +26,6 @@ class QuestionRefiner:
         self.extracted_md_url = None
         self.refined_md_url = None
         
-
     def build(self) -> dict:
         logger.info(f"Building QuestionRefiner pipeline for project {self.project_id}...")
         self._extract()
@@ -42,63 +37,56 @@ class QuestionRefiner:
         }
 
     def _extract(self) -> str:
+        logger.info("Triggering Extraction Sub-process...")
         self.extracted_md_url = build_DocuExtractor(self.project_id, self.file_url)
         return self.extracted_md_url
 
     def _refine(self):
+        import requests
         logger.info("Starting format-based refinement phase...")
 
-        # 1. Fetch the universally formatted markdown content
         response = requests.get(self.extracted_md_url, timeout=30)
         response.raise_for_status()
         raw_text = response.text
 
-        # 2. Extract strictly using the Adaptive Parser
         raw_questions = self._extract_universal_format(raw_text)
         logger.info(f"Successfully parsed {len(raw_questions)} raw question blocks.")
 
-        # 3. Create exact batches of 30 questions
         batch_size = 30
         batches = [raw_questions[i:i + batch_size] for i in range(0, len(raw_questions), batch_size)]
-        logger.info(f"Split into {len(batches)} exact batches of up to {batch_size} questions.")
+        logger.info(f"Split into {len(batches)} exact batches.")
 
-        # 4. Process batches concurrently (Protects your 500MB server RAM)
         all_refined_questions = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        
+        # PROTECT GROQ FREE TIER: Max workers reduced to 2 to prevent hitting the 30k TPM limit instantly
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
             results = executor.map(self._process_batch, batches)
             for batch_result in results:
                 if batch_result and batch_result.questions:
                     all_refined_questions.extend(batch_result.questions)
 
-        # 5. Format the final Markdown output cleanly
-        final_markdown = ""
+        final_markdown = f"# Refined Questions for Project: {self.project_id}\n\n"
         for idx, rq in enumerate(all_refined_questions, 1):
             final_markdown += f"{idx}. {rq.refined_question}\n"
 
-        # 6. Upload final Markdown to Blob Storage
-        self.refined_md_url = self._upload_refined_to_blob(final_markdown)
+        blob_path = f"{self.project_id}/output/refined_questions.md"
+        self.refined_md_url = upload_to_vercel_blob(
+            blob_path=blob_path, 
+            content=final_markdown,
+            content_type="text/markdown"
+        )
         logger.info(f"Refinement complete. Refined Markdown URL: {self.refined_md_url}")
 
     # ==========================================
     # Industry-Level Adaptive Parser
     # ==========================================
     def _extract_universal_format(self, raw_text: str) -> list[str]:
-        """
-        Isolates questions by detecting Primary question markers ONLY.
-        Keeps sub-questions (a, b, i, ii) and multiple choice options attached to their parent.
-        """
-        # Step A: Sanitize the DocuGyan structural tags
-        text = re.sub(r'(?m)^## Page \d+\s*$', '', raw_text)
+        text = re.sub(r'(?m)^## Page \d+\s*(\(Vision Extracted\))?.*?$', '', raw_text)
         text = re.sub(r'(?m)^---\s*$', '', text)
         text = re.sub(r'(?m)^# .*?$', '', text) 
+        text = re.sub(r'\n{3,}', '\n\n', text) 
         text = text.strip()
 
-        # Step B: The "Parent-Only" Splitter
-        # Matches a newline, immediately followed by PRIMARY markers only:
-        # 1. Numbers (1., 1), 1-)
-        # 2. Q/Question prefixes (Q1, Question 2:, Q. 3)
-        # 3. Capital Roman Numerals (I., II., III.)
-        # NOTICE: Lowercase letters and bullet points are removed from the split criteria!
         primary_pattern = r'\n(?=\s*(?:' \
                           r'\d+[\.\)\-]' \
                           r'|Q(?:uestion)?\s*\d*[\.\:\)]?' \
@@ -107,17 +95,11 @@ class QuestionRefiner:
         
         raw_blocks = re.split(primary_pattern, text)
         
-        # Step C: Validation and Fallback
         questions = []
         for block in raw_blocks:
             cleaned = block.strip()
-            
             if len(cleaned) < 15:
                 continue
-                
-            # FALLBACK: If a document uses bullets for main questions, it won't split above.
-            # It will end up here as a massive block. We dynamically slice it by paragraphs 
-            # to protect the LLM and your 500MB server RAM.
             if len(cleaned) > 1500:
                 paragraphs = re.split(r'\n\n+', cleaned)
                 for p in paragraphs:
@@ -127,32 +109,39 @@ class QuestionRefiner:
                 questions.append(cleaned)
                 
         return questions
+
     # ==========================================
     # LLM Batch Worker
     # ==========================================
     def _process_batch(self, batch: list[str]) -> RefinedBatch:
-        structured_llm = self.llm.with_structured_output(RefinedBatch)
-        
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", 
-             "You are an expert educational AI. Read the following list of raw extracted text blocks. "
-             "Your job is to identify the questions, extract them, and refine them into clear, professional, "
-             "and grammatically correct questions. "
-             "Ignore pure instructional text (e.g., 'Answer the following'). "
-             "Do not include answers or multiple-choice options."
-            ),
-            ("user", "Raw text blocks:\n\n{questions}")
-        ])
-        
+        """
+        Processes a batch of raw questions and returns a structured RefinedBatch.
+        """
+        # Format the list into a single string for the LLM prompt
         batch_text = "\n\n".join(f"- {q}" for q in batch)
-        chain = prompt | structured_llm
         
         try:
-            return chain.invoke({"questions": batch_text})
+            refined = DocuAgentLLMCalls.call_refine_questions(batch_text)
+            if refined and refined.questions:
+                logger.info(f"Batch of {len(batch)} questions refined successfully.")
+                return refined
+            else:
+                logger.warning("LLM returned no refined questions for the batch.")
+                return RefinedBatch(questions=[])
         except Exception as e:
-            logger.error(f"Failed to process batch: {e}")
-            return None
+            logger.error(f"Error processing batch: {str(e)}")
+            return RefinedBatch(questions=[])
+        
 
-    def _upload_refined_to_blob(self, content: str) -> str:
-        # TODO: Implement Vercel Blob PUT request
-        return "https://blob.vercel-storage.com/dummy-url/output/refined_questions.md"
+# Builder function to run QuestionRefiner in one step
+def build_QuestionRefiner(project_id: str, file_url: str) -> dict:
+    """
+    Factory function to build and execute the QuestionRefiner pipeline.
+    and return the final URLs for both raw and refined questions.
+
+    args:
+        project_id: Unique identifier for the project.
+        file_url: URL of the original document to process.
+    """
+    refiner = QuestionRefiner(project_id, file_url)
+    return refiner.build()

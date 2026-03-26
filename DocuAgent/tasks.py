@@ -1,7 +1,7 @@
 # tasks.py — error handling lives here
 from celery import shared_task
 from .models import DocuProcess
-from DocuAgent.agents.supervisor.graph import build_docu_supervisor_agent
+from DocuAgent.agents.orchestrator.graph import build_docu_pipeline_orchestrator
 from DocuGyan.celery import stop_task
 
 
@@ -9,7 +9,7 @@ from DocuGyan.celery import stop_task
 def run_agentic_pipeline_task(self, project_id, user_uuid):
     """Agentic Ingestion Pipeline"""
     try:
-        result = build_docu_supervisor_agent(project_id, user_uuid)
+        result = build_docu_pipeline_orchestrator(project_id, user_uuid)
 
         return result
     except Exception as e:

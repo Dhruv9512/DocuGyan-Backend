@@ -5,10 +5,11 @@ import logging
 from urllib.parse import urlparse, unquote
 import re
 
-import fitz  # PyMuPDF
+import fitz
+import requests  # PyMuPDF
 
 # Import LLM Utility for Vision Calls
-from DocuAgent.utils.llm_calls import LLMUtility
+from DocuAgent.utils.llm_calls import DocuAgentLLMCalls
 from DocuAgent.utils.utility import upload_to_vercel_blob
 
 
@@ -24,6 +25,8 @@ class DocuExtractor:
     def __init__(self, project_id: str, file_url: str):
         self.project_id = project_id
         self.file_url = file_url
+        self.session = requests.Session()
+
   
 
     def extract_from_url(self) -> str:
@@ -142,7 +145,7 @@ class DocuExtractor:
         
         try:
             # 1. Call your LLM API (Gemini/HF) with the list of images
-            extracted_text_block = LLMUtility.PDFExtractorLLM(images)
+            extracted_text_block = DocuAgentLLMCalls.PDFExtractorLLM(images)
             
             # 2. Split the LLM's response by the "## Page X" headers
             # This regex splits the string every time it sees "## Page " followed by a number at the start of a line.
@@ -217,13 +220,9 @@ class DocuExtractor:
         return False
 
     def _extract_page_local(self, page) -> str:
-        """
-        Advanced local extraction using PyMuPDF (Tables + Markdown Layout).
-        Completely free and extremely fast.
-        """
         lines = []
         
-        # EXTRACT TABLES FIRST (protects grid structure from getting mangled)
+        # EXTRACT TABLES FIRST
         tables = page.find_tables()
         if tables:
             for table in tables:
@@ -232,13 +231,17 @@ class DocuExtractor:
         
         # EXTRACT TEXT WITH LAYOUT AWARENESS
         try:
-            # Requires PyMuPDF 1.24+ for native markdown support
             text = page.get_text("markdown")
             if text:
                 lines.append(text)
         except Exception:
-            # Fallback for older PyMuPDF versions
-            lines.append(page.get_text("text"))
+            # INDUSTRY FALLBACK: Sort text blocks by their physical Y/X coordinates
+            # This handles two-column layouts beautifully if "markdown" mode fails
+            blocks = page.get_text("blocks")
+            # Sort by Y coordinate first (top to bottom), then X (left to right)
+            blocks.sort(key=lambda b: (b[1], b[0])) 
+            for b in blocks:
+                lines.append(b[4]) # b[4] contains the actual text string
             
         content = "\n".join(lines).strip()
         return content if content else "[Blank Page]"
