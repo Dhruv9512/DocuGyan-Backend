@@ -26,8 +26,8 @@ langchain-community==0.4.1
 langchain-google-genai==4.2.1
 langchain-groq==1.1.2
 langchain-huggingface==1.2.0
+langchain-milvus==0.3.3
 groq==0.37.1
-huggingface-hub==0.36.2
 
 # --- Multi-Agent Orchestration ---
 langgraph==1.0.9
@@ -50,6 +50,9 @@ google-auth==2.20.0
 pymupdf==1.27.2
 llama-cloud==1.6.0
 
+
+# zilliz milvus dependencies
+pymilvus==2.6.11
 
 # Adding shared model
 git+https://github.com/dhruv9512/docugyan-shared-models.git@main#egg=docugyan-shared-models

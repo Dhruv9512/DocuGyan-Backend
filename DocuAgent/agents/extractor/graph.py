@@ -26,6 +26,10 @@ class DocuExtractorAgent:
         self.notifier.send_message("Extractor Agent: Starting parallel document extraction...")
         urls = state.get("reference_urls", [])
         
+        if not urls:
+            self.notifier.send_message("Extractor Agent: No reference URLs provided. Skipping extraction.")
+            raise ValueError("No reference URLs provided for extraction.")
+        
         # Spin up multiple 'extract_single_url_worker' nodes at the same time
         return [
             Send("extract_single_url_worker", {"url": url, "project_id": self.project_id}) 
@@ -47,7 +51,7 @@ class DocuExtractorAgent:
         except Exception as e:
             self.notifier.send_error(f"Failed to extract {url}: {str(e)}")
             # Return empty list on failure so the reducer doesn't break
-            return {"extracted_doc_blob_url": []} 
+            raise RuntimeError(f"Failed to extract {url}: {str(e)}") from e
 
     def refine_questions(self, state: ExtractorState):
         """
@@ -66,8 +70,10 @@ class DocuExtractorAgent:
                 self.notifier.send_message("Extractor Agent: Question refinement complete.")
             except Exception as e:
                 self.notifier.send_error(f"Failed to refine questions: {str(e)}")
+                raise RuntimeError(f"Failed to refine questions: {str(e)}") from e
         else:
             self.notifier.send_message("Extractor Agent: No original questions provided. Skipping refinement.")
+            raise ValueError("No original questions provided for refinement.")
             
         return {"refined_questions_blob_url": refined_urls.get("refined_questions_blob_url", None)}
 
@@ -97,4 +103,13 @@ class DocuExtractorAgent:
 
 # build DocuExtractor and QuestionRefiner
 def build_docu_extractor_agent(project_id: str) -> DocuExtractorAgent:
-    return DocuExtractorAgent(project_id=project_id).build_graph()
+    """
+    Factory function to build the DocuExtractorAgent with error handling.
+
+    arges:
+        project_id (str): The unique identifier for the project, used for scoping resources and logging.
+    """
+    try:
+        return DocuExtractorAgent(project_id=project_id).build_graph()
+    except Exception as e:
+        raise RuntimeError(f"Failed to build DocuExtractor agent: {str(e)}") from e

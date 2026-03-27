@@ -2,8 +2,8 @@ from django.conf import settings
 
 class LLMEngine:
     """
-    The Neutral Engine: A Factory for LLM Clients.
-    Only handles initialization and authentication.
+    The Neutral Engine: A Factory for LangChain-compatible LLM Clients.
+    Only handles initialization, authentication, and standardizing interfaces.
     """
 
     @staticmethod
@@ -13,7 +13,7 @@ class LLMEngine:
             model=model_name,
             temperature=temperature,
             max_retries=3,
-            groq_api_key=getattr(settings, 'GROQ_API_KEY', None)
+            api_key=getattr(settings, 'GROQ_API_KEY', None)
         )
 
     @staticmethod
@@ -22,28 +22,33 @@ class LLMEngine:
         return ChatGoogleGenerativeAI(
             model=model_name,
             temperature=temperature,
-            google_api_key=getattr(settings, 'GOOGLE_API_KEY', None)
-        )
-
-    @staticmethod
-    def get_huggingface_client():
-        from huggingface_hub import InferenceClient
-        return InferenceClient(
-            api_key=getattr(settings, 'HUGGINGFACE_API_KEY', None)
+            api_key=getattr(settings, 'GOOGLE_API_KEY', None)
         )
     
     @staticmethod
     def get_huggingface_chat_client(model_name: str = "meta-llama/Llama-3.1-8B-Instruct", temperature: float = 0.0):
         """
         Returns a LangChain-compatible HuggingFace Endpoint.
-        Note: Requires 'huggingface_hub' and 'langchain-huggingface' packages.
         """
         from langchain_huggingface import HuggingFaceEndpoint, ChatHuggingFace
         
+        safe_temp = 0.01 if temperature <= 0.0 else temperature
+
         llm = HuggingFaceEndpoint(
             repo_id=model_name,
-            temperature=temperature,
+            temperature=safe_temp,
             huggingfacehub_api_token=getattr(settings, 'HUGGINGFACE_API_KEY', None),
-            timeout=30
+            max_retries=3
         )
         return ChatHuggingFace(llm=llm)
+    
+    @staticmethod
+    def get_huggingface_embedding_client(model_name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"):
+        from langchain_huggingface import HuggingFaceEndpoint, HuggingFaceEmbeddings
+        
+        llm = HuggingFaceEndpoint(
+            repo_id=model_name,
+            huggingfacehub_api_token=getattr(settings, 'HUGGINGFACE_API_KEY', None),
+            max_retries=3
+        )
+        return HuggingFaceEmbeddings(llm=llm)

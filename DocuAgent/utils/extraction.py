@@ -30,9 +30,6 @@ class DocuExtractor:
   
 
     def extract_from_url(self) -> str:
-        """
-        Main pipeline: Determines file type, routes extraction, and uploads to Blob.
-        """
         extension = self._get_file_extension(self.file_url)
         file_name = self._get_file_name(self.file_url)
         
@@ -49,32 +46,39 @@ class DocuExtractor:
                 extracted_text = self._extract_ppt()
             else:
                 raise ValueError(f"Unsupported format: {extension}")
+
+            base_name = os.path.splitext(file_name)[0]
+            md_filename = f"{base_name}.md"
+            blob_path = f"{self.project_id}/temp/{md_filename}"
+
+            logger.info("Uploading extracted Markdown to Vercel Blob...")
+            return upload_to_vercel_blob(blob_path=blob_path, content=extracted_text, content_type="text/markdown")
+
         except Exception as e:
-            logger.error(f"Extraction failed for {self.file_url}: {e}", exc_info=True)
-            raise
-
-        # Upload final Markdown to Vercel Blob
-        base_name = os.path.splitext(file_name)[0]
-        md_filename = f"{base_name}.md"
-        blob_path = f"{self.project_id}/temp/{md_filename}"
-
-        return upload_to_vercel_blob(blob_path=blob_path, content=extracted_text,content_type="text/markdown")
-
+            logger.error(f"Pipeline failed for {self.file_url}: {e}", exc_info=True)
+            raise RuntimeError(f"Extraction pipeline failed: {str(e)}") from e
+        
     # ==========================================
     # The Intelligent PDF Router
     # ==========================================
     def _extract_pdf(self) -> str:
         pdf_name = self._get_file_name(self.file_url)
         logger.info(f"Streaming {pdf_name} to disk (RAM protection active)...")
+
+        try:
         
-        with tempfile.NamedTemporaryFile(delete=True, suffix=".pdf") as temp_pdf:
-            with self.session.get(self.file_url, stream=True, timeout=30) as r:
-                r.raise_for_status()
-                for chunk in r.iter_content(chunk_size=8192):
-                    if chunk:
-                        temp_pdf.write(chunk)
-            temp_pdf.flush()
-            
+            with tempfile.NamedTemporaryFile(delete=True, suffix=".pdf") as temp_pdf:
+                with self.session.get(self.file_url, stream=True, timeout=30) as r:
+                    r.raise_for_status()
+                    for chunk in r.iter_content(chunk_size=8192):
+                        if chunk:
+                            temp_pdf.write(chunk)
+                temp_pdf.flush()
+        except Exception as e:
+            logger.error(f"Failed to stream {pdf_name}: {e}", exc_info=True)
+            raise RuntimeError(f"Failed to stream PDF: {str(e)}") from e
+        
+        try:
             with fitz.open(temp_pdf.name) as doc:
                 total_pages = len(doc)
                 
@@ -127,14 +131,17 @@ class DocuExtractor:
                     self._process_and_place_pdf_batch(
                         vision_batch_images, vision_batch_indices, extracted_pages
                     )
-                    
-            # 5. Build the final perfectly-ordered document
-            final_markdown = f"# {pdf_name}\n\n"
-            for page_content in extracted_pages:
-                if page_content: # Ignore empty slots from batch merging
-                    final_markdown += page_content
-                    
-            return final_markdown
+        except Exception as e:
+            logger.error(f"Failed to process PDF {pdf_name}: {e}", exc_info=True)
+            raise RuntimeError(f"Failed to process PDF: {str(e)}") from e
+                
+        # 5. Build the final perfectly-ordered document
+        final_markdown = f"# {pdf_name}\n\n"
+        for page_content in extracted_pages:
+            if page_content: # Ignore empty slots from batch merging
+                final_markdown += page_content
+                
+        return final_markdown
 
     def _process_and_place_pdf_batch(self, images: list, indices: list, extracted_pages: list):
         """
@@ -182,9 +189,7 @@ class DocuExtractor:
                 
         except Exception as e:
             logger.error(f"Vision Batch failed for pages {indices}: {e}")
-            # If the API fails completely, insert error messages into the correct slots
-            for idx in indices:
-                extracted_pages[idx] = f"## Page {idx+1}\n[Extraction Failed: Vision API Error]\n---\n"
+            raise RuntimeError(f"Vision API failed during batch extraction: {str(e)}") from e
 
     def _needs_vision_llm(self, page) -> bool:
         """
@@ -263,13 +268,17 @@ class DocuExtractor:
         file_name = self._get_file_name(self.file_url)
         logger.info(f"Extracting text file: {file_name}...")
 
-        response = self.session.get(self.file_url, timeout=15)
-        response.raise_for_status()
+        try:
+            response = self.session.get(self.file_url, timeout=15)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to download text file from {file_name}: {e}", exc_info=True)
+            raise RuntimeError(f"Failed to download text file from {self.file_url}: {e}") from e
        
         raw_text = response.content.decode('utf-8', errors='replace')
 
         output_lines = [
-            f"# {file_name}\n",
+            f"# {file_name}\n\n",
             "## Page 1\n",
             raw_text.strip() if raw_text else "[No text content found]",
             "\n---\n"
@@ -277,14 +286,20 @@ class DocuExtractor:
         return "\n".join(output_lines)
 
     def _extract_word(self) -> str:
-        return "Word extraction not yet implemented... (Use python-docx here)"
+        raise NotImplementedError("Word (.doc/.docx) extraction is not yet supported in this pipeline.")
 
     def _extract_ppt(self) -> str:
-        return "PPT extraction not yet implemented... (Use python-pptx here)"
+        raise NotImplementedError("PowerPoint (.ppt/.pptx) extraction is not yet supported in this pipeline.")
 
 # ==========================================
 # Factory Function
 # ==========================================
 def build_DocuExtractor(project_id: str, url: str) -> DocuExtractor:
-    app = DocuExtractor(project_id=project_id, file_url=url)
-    return app.extract_from_url()
+    
+    try:
+        app = DocuExtractor(project_id=project_id, file_url=url)
+        app.extract_from_url()
+    except Exception as e:
+        logger.error(f"DocuExtractor failed for {url}: {e}", exc_info=True)
+        raise RuntimeError(f"DocuExtractor failed: {str(e)}") from e
+    return app

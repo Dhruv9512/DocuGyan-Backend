@@ -27,7 +27,6 @@ class DocuProcessView(APIView):
         project_id = request.data.get('project_id')
         reference_urls = request.data.get('reference_urls', [])
         question_urls = request.data.get('question_urls', [])
-        text_questions = request.data.get('questions', [])
         user_uuid = request.data.get('user_uuid')
 
         if not project_id:
@@ -42,7 +41,6 @@ class DocuProcessView(APIView):
         # 2. Update it with the uploaded URLs
         docu_process.reference_urls = reference_urls
         docu_process.question_urls = question_urls
-        docu_process.text_questions = text_questions
         docu_process.save()
 
         # 3. Trigger Celery Task

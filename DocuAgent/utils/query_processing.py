@@ -3,6 +3,7 @@ import time
 import logging
 import concurrent.futures
 from pydantic import BaseModel, Field
+import requests
 
 
 # Import your Utilities!
@@ -26,7 +27,7 @@ class QuestionRefiner:
         self.extracted_md_url = None
         self.refined_md_url = None
         
-    def build(self) -> dict:
+    def run(self) -> dict:
         logger.info(f"Building QuestionRefiner pipeline for project {self.project_id}...")
         self._extract()
         self._refine()
@@ -42,29 +43,63 @@ class QuestionRefiner:
         return self.extracted_md_url
 
     def _refine(self):
-        import requests
         logger.info("Starting format-based refinement phase...")
 
-        response = requests.get(self.extracted_md_url, timeout=30)
-        response.raise_for_status()
-        raw_text = response.text
+        # 1. Safely handle the download
+        try:
+            response = requests.get(self.extracted_md_url, timeout=30)
+            response.raise_for_status()
+            raw_text = response.text
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to download raw markdown from {self.extracted_md_url}")
+            raise RuntimeError(f"Failed to fetch extracted text for refinement: {str(e)}") from e
 
+        # 2. Extract and Batch
         raw_questions = self._extract_universal_format(raw_text)
         logger.info(f"Successfully parsed {len(raw_questions)} raw question blocks.")
+
+        if not raw_questions:
+            raise ValueError("No questions were found in the extracted text to refine.")
 
         batch_size = 30
         batches = [raw_questions[i:i + batch_size] for i in range(0, len(raw_questions), batch_size)]
         logger.info(f"Split into {len(batches)} exact batches.")
 
         all_refined_questions = []
+        failed_batches = 0
         
-        # PROTECT GROQ FREE TIER: Max workers reduced to 2 to prevent hitting the 30k TPM limit instantly
+        # 3. PROTECT GROQ FREE TIER: Max workers reduced to 2
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            results = executor.map(self._process_batch, batches)
-            for batch_result in results:
-                if batch_result and batch_result.questions:
-                    all_refined_questions.extend(batch_result.questions)
+            # Create a dictionary of futures so we can track them independently
+            future_to_batch = {
+                executor.submit(self._process_batch, batch): batch 
+                for batch in batches
+            }
 
+            # Process them as they complete (out of order is fine, we just want the data)
+            for future in concurrent.futures.as_completed(future_to_batch):
+                try:
+                    # If the worker thread permanently failed, the exception is raised HERE
+                    batch_result = future.result()
+                    if batch_result and batch_result.questions:
+                        all_refined_questions.extend(batch_result.questions)
+                except Exception as e:
+                    # Catch the failure so the OTHER threads keep running
+                    logger.error(f"A batch permanently failed after retries: {str(e)}")
+                    failed_batches += 1
+
+        # 4. Post-processing Safety Checks
+        if failed_batches == len(batches):
+             # Total failure state
+             raise RuntimeError("Critical Failure: All LLM refinement batches failed.")
+        elif failed_batches > 0:
+             # Partial success state
+             logger.warning(f"Refinement finished with {failed_batches} failed batches. Saving partial data ({len(all_refined_questions)} questions).")
+
+        if not all_refined_questions:
+             raise ValueError("Refinement completed but zero valid questions were generated.")
+
+        # 5. Format and Upload
         final_markdown = f"# Refined Questions for Project: {self.project_id}\n\n"
         for idx, rq in enumerate(all_refined_questions, 1):
             final_markdown += f"{idx}. {rq.refined_question}\n"
@@ -127,11 +162,10 @@ class QuestionRefiner:
                 return refined
             else:
                 logger.warning("LLM returned no refined questions for the batch.")
-                return RefinedBatch(questions=[])
+                raise ValueError("LLM returned no refined questions.")
         except Exception as e:
             logger.error(f"Error processing batch: {str(e)}")
-            return RefinedBatch(questions=[])
-        
+            raise RuntimeError(f"Failed to process batch: {str(e)}") from e
 
 # Builder function to run QuestionRefiner in one step
 def build_QuestionRefiner(project_id: str, file_url: str) -> dict:
@@ -143,5 +177,9 @@ def build_QuestionRefiner(project_id: str, file_url: str) -> dict:
         project_id: Unique identifier for the project.
         file_url: URL of the original document to process.
     """
-    refiner = QuestionRefiner(project_id, file_url)
-    return refiner.build()
+    try:
+        refiner = QuestionRefiner(project_id, file_url)
+        return refiner.run()
+    except Exception as e:
+        logger.error(f"Failed to build or run QuestionRefiner: {str(e)}", exc_info=True)
+        raise RuntimeError(f"Failed to build or run QuestionRefiner: {str(e)}") from e

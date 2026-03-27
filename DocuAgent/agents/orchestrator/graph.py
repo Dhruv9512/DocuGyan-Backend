@@ -1,14 +1,19 @@
 from typing import Literal
 from langgraph.graph import StateGraph, START, END
-from langchain_google_genai import ChatGoogleGenerativeAI
+from psycopg2 import DatabaseError
+from DocuGyan.celery import stop_task
 
 from DocuAgent.websocket.notifier import Notifier
 from DocuAgent.models import DocuProcess
+
+# schemas
 from DocuAgent.schemas.agent_schemas import OrchestratorState
 from DocuAgent.schemas.llm_schemas import RAGClassification
 
 # Import the Extractor Agent Subgraph
 from DocuAgent.agents.extractor.graph import build_docu_extractor_agent
+
+from DocuAgent.ingestion.VectorDB_Ingestor import build_vector_db_ingestor
 
 class DocuPipelineOrchestrator:
     """
@@ -21,7 +26,6 @@ class DocuPipelineOrchestrator:
         self.base_instance = DocuProcess.objects.get(
             project_id=project_id, user_uuid=user_uuid
         )
-        self.llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
         self.notifier = Notifier(project_id)  
         self.graph = self._build_graph()
 
@@ -33,6 +37,10 @@ class DocuPipelineOrchestrator:
         strategy = state.get("rag_strategy", "vector")
         self.notifier.send_message(f"Orchestrator: Routing to {strategy.capitalize()} Ingestor...")
         
+        if not state.get("refined_questions_blob_url") or not state.get("extracted_doc_blob_url"):
+            self.notifier.send_error(f"Docuextractor Agent failed to produce extracted urls of refined question url and referenced urls. Halting pipeline. State: {state}")
+            stop_task()
+
         if strategy == "vector":
             return "vector_rag_ingest"
         elif strategy == "graph":
@@ -58,12 +66,20 @@ class DocuPipelineOrchestrator:
     def vector_rag_ingest(self, state: OrchestratorState) -> dict:
         """Worker node: Ingests to Vector DB."""
         self.notifier.send_message("Vector Ingestor: Processing chunks and generating embeddings...")
-        # Add actual ingestion logic here in the future
-        return {"ingestion_done": True}
+        try:
+            result = build_vector_db_ingestor(project_id=self.project_id, extracted_doc_urls=state.get("extracted_doc_blob_url", []))
+        except Exception as e:
+            self.notifier.send_error(f"Vector Ingestor failed: {str(e)}")
+            raise RuntimeError(f"Vector Ingestor failed: {str(e)}") from e
+        
+        if result:
+            self.notifier.send_message("Vector Ingestor: Successfully ingested documents into the vector database.")
+            return {"ingestion_done": True}
 
     def graph_rag_ingest(self, state: OrchestratorState) -> dict:
         """Worker node: Ingests to Graph DB."""
         self.notifier.send_message("Graph Ingestor: Mapping entities and relationships...")
+
         # Add actual ingestion logic here in the future
         return {"ingestion_done": True}
 
@@ -136,21 +152,21 @@ def build_docu_pipeline_orchestrator(project_id: str, user_uuid: str):
     notifier = Notifier(project_id)
 
     try:
-        notifier.send_message("Initializing DocuPipeline Orchestrator...")
+        # 1. Fetch the record before doing any heavy lifting.
+        docu_process = DocuProcess.objects.get(project_id=project_id, user_uuid=user_uuid)
 
-        # Initialize and run the orchestrator
+        notifier.send_message("Initializing DocuPipeline Orchestrator...")
+        
+        # 2. Initialize and run the orchestrator
         orchestrator = DocuPipelineOrchestrator(project_id=project_id, user_uuid=user_uuid)
         result = orchestrator.run()
 
-        # Mark as completed on success
-        docu_process = DocuProcess.objects.get(project_id=project_id, user_uuid=user_uuid)
+        # 3. COMMIT SUCCESS: Mark as completed
         docu_process.status = DocuProcess.StatusChoices.COMPLETED
-        docu_process.metadata = {
-            "rag_strategy": result.get("rag_strategy"),
-            "refined_questions": result.get("refined_questions_blob_url"),
-            "extracted_docs": result.get("extracted_doc_blob_url"),
-        }
-        docu_process.save(update_fields=['status', 'metadata'])
+        docu_process.extracted_doc_urls = result.get("extracted_doc_blob_url", [])
+        docu_process.refined_question_urls = result.get("refined_questions_blob_url", [])
+        docu_process.ingestion_strategy = result.get("rag_strategy", "")
+        docu_process.save(update_fields=['status', 'extracted_doc_urls', 'refined_question_urls', 'ingestion_strategy'])
         
         # Notify completion
         notifier.send_completed(final_result={
@@ -159,13 +175,22 @@ def build_docu_pipeline_orchestrator(project_id: str, user_uuid: str):
         })
 
         return result
+    
+    except DatabaseError as db_err:
+        # Catch initial DB fetch errors or commit errors
+        error_message = f"Database error during pipeline execution: {str(db_err)}"
+        notifier.send_error(error_message)
+        raise RuntimeError(error_message) from db_err
 
     except Exception as e:
-        # Handle failures gracefully
-        docu_process = DocuProcess.objects.get(project_id=project_id, user_uuid=user_uuid)
-        docu_process.status = DocuProcess.StatusChoices.PENDING
-        docu_process.error_message = str(e)
-        docu_process.save(update_fields=['status', 'error_message'])
+        # Catch LangGraph/LLM/System failures gracefully
+        try:
+            fallback_process = DocuProcess.objects.get(project_id=project_id, user_uuid=user_uuid)
+            fallback_process.status = DocuProcess.StatusChoices.FAILED  # Changed to FAILED
+            fallback_process.error_message = str(e)
+            fallback_process.save(update_fields=['status', 'error_message'])
+        except Exception as fallback_err:
+            notifier.send_error(f"Failed to update process status after error: {str(fallback_err)}")
         
         notifier.send_error(str(e))
         raise e
