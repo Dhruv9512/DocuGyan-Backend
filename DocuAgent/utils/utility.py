@@ -5,11 +5,11 @@ from DocuAgent.models import DocuProcess, CustomUser
 from pymilvus import connections, utility, FieldSchema, CollectionSchema, DataType, Collection
 
 
-def upload_to_vercel_blob(blob_path: str, content: str, content_type: str = "text/markdown") -> str:
+def upload_to_vercel_blob(blob_path: str, content, content_type: str = "text/markdown") -> str:
     """
-    Securely uploads data to Vercel Blob storage as a standalone utility.
+    Securely uploads data to Vercel Blob storage. 
+    Accepts both strings (for Markdown) and bytes (for Images).
     """
-    # 1. Get the token directly from settings
     blob_token = getattr(settings, 'VERCEL_BLOB_TOKEN', None)
     
     if not blob_token:
@@ -22,9 +22,10 @@ def upload_to_vercel_blob(blob_path: str, content: str, content_type: str = "tex
         "x-content-type": content_type, 
     }
     
-    data = content.encode('utf-8')
-    response = None # Prevent UnboundLocalError if the request times out
+    # Handle both string (text) and binary (image) payloads securely
+    data = content.encode('utf-8') if isinstance(content, str) else content
     
+    response = None 
     try:
         response = requests.put(url, headers=headers, data=data, timeout=30)
         response.raise_for_status()
@@ -35,8 +36,7 @@ def upload_to_vercel_blob(blob_path: str, content: str, content_type: str = "tex
     except requests.exceptions.RequestException as e:
         error_details = response.text if response else "No response body"
         print(f"Vercel Blob upload failed for {blob_path}: {str(e)} | Details: {error_details}")
-        raise RuntimeError(f"Failed to upload to Vercel Blob: {error_details}") from e
-    
+        raise RuntimeError(f"Failed to upload to Vercel Blob: {error_details}") from e 
 
 def get_collection_name(project_id) -> str:
     """

@@ -18,7 +18,7 @@ class DocuAgentLLMCalls:
     # WORKFLOW 1: Scan-Based PDF Extraction
     # ==========================================
     @classmethod
-    def PDFExtractorLLM(cls, image_bytes_list: List[bytes]) -> str:
+    def VisionExtractorLLM(cls, image_bytes_list: List[bytes]) -> str:
         """
         Takes a list of JPEG image bytes and returns formatted Markdown.
         Resilient 3-tier fallback using purely LangChain models.
@@ -112,6 +112,9 @@ class DocuAgentLLMCalls:
             b64_image = base64.b64encode(img_bytes).decode('utf-8')
             content_blocks.append({
                 "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"}
+                "image_url": {
+                    "url": f"data:image/jpeg;base64,{b64_image}",
+                    "detail": "high" 
+                }
             })
         return [HumanMessage(content=content_blocks)]
