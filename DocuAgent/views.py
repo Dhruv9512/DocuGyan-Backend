@@ -2,6 +2,8 @@ import uuid
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+
+from DocuAgent.utils.utility import get_collection_name
 from .models import DocuProcess
 from .tasks import run_agentic_pipeline_task
 
@@ -15,10 +17,12 @@ class InitDocuProcessView(APIView):
         DocuProcess.objects.create(
             project_id=project_id,
             user_uuid=user_uuid,
-            status=DocuProcess.StatusChoices.PENDING, # Or create an "INITIALIZING" status
+            status=DocuProcess.StatusChoices.PENDING, 
         )
 
-        return Response({"project_id": project_id}, status=status.HTTP_201_CREATED)
+        blob_collection = get_collection_name(project_id)
+
+        return Response({"project_id": project_id,"blob_collection": blob_collection}, status=status.HTTP_201_CREATED)
 
 
 class DocuProcessView(APIView):

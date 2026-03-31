@@ -9,7 +9,7 @@ import requests
 # Import your Utilities!
 from DocuAgent.utils.llm_calls import DocuAgentLLMCalls
 from DocuAgent.utils.extraction import build_DocuExtractor 
-from DocuAgent.utils.utility import upload_to_vercel_blob
+from DocuAgent.utils.utility import upload_to_vercel_blob, get_collection_name
 
 from DocuAgent.schemas.llm_schemas import RefinedBatch
 
@@ -26,6 +26,7 @@ class QuestionRefiner:
         self.file_url = file_url
         self.extracted_md_url = None
         self.refined_md_url = None
+        self.blob_collection = get_collection_name(self.project_id)
         
     def run(self) -> dict:
         logger.info(f"Building QuestionRefiner pipeline for project {self.project_id}...")
@@ -104,7 +105,7 @@ class QuestionRefiner:
         for idx, rq in enumerate(all_refined_questions, 1):
             final_markdown += f"{idx}. {rq.refined_question}\n"
 
-        blob_path = f"{self.project_id}/output/refined_questions.md"
+        blob_path = f"{self.blob_collection}/output/refined_questions.md"
         self.refined_md_url = upload_to_vercel_blob(
             blob_path=blob_path, 
             content=final_markdown,

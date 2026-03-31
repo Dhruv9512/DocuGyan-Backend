@@ -25,7 +25,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Load environment variables
 SECRET_KEY = os.environ.get("SECRET_KEY")
 DEBUG = os.environ.get("DEBUG","False") == "True"
-BLOB_READ_WRITE_TOKEN = os.environ.get("BLOB_READ_WRITE_TOKEN")
+VERCEL_BLOB_TOKEN = os.environ.get("BLOB_READ_WRITE_TOKEN")
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL")
 
 
@@ -46,8 +46,17 @@ SIGNING_KEY = os.environ.get("JWT_SECRET_KEY", SECRET_KEY)
 # Google OAuth Client ID
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
 
-# LlamaParse API Key
-LLAMAPARSE_API_KEY = os.environ.get("LLAMAPARSE_API_KEY")
+# LLM API Keys
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
+
+# --- Vector Database (Zilliz/Milvus) ---
+ZILLIZ_URI = os.environ.get("ZILLIZ_URI")
+ZILLIZ_TOKEN = os.environ.get("ZILLIZ_TOKEN")
+ZILLIZ_ALIAS = os.environ.get("ZILLIZ_ALIAS", "default")
+
+
 
 # Application definition
 INSTALLED_APPS = [

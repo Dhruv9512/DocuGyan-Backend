@@ -10,7 +10,8 @@ import requests  # PyMuPDF
 
 # Import LLM Utility for Vision Calls
 from DocuAgent.utils.llm_calls import DocuAgentLLMCalls
-from DocuAgent.utils.utility import upload_to_vercel_blob
+from DocuAgent.utils.utility import upload_to_vercel_blob, get_collection_name
+from django.conf import settings
 
 
 
@@ -27,6 +28,7 @@ class DocuExtractor:
         self.file_url = file_url
         self.session = requests.Session()
         self.image_cache = {}  
+        self.blob_collection = get_collection_name(self.project_id)
 
   
 
@@ -52,7 +54,7 @@ class DocuExtractor:
 
             base_name = os.path.splitext(file_name)[0]
             md_filename = f"{base_name}.md"
-            blob_path = f"{self.project_id}/temp/{md_filename}"
+            blob_path = f"{self.blob_collection}/temp/{md_filename}"
 
             logger.info("Uploading extracted Markdown to Vercel Blob...")
             return upload_to_vercel_blob(blob_path=blob_path, content=extracted_text, content_type="text/markdown")
