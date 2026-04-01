@@ -1,42 +1,69 @@
 import requests
 from django.conf import settings
 import re
+
+
+from vercel.blob import BlobClient
 from DocuAgent.models import DocuProcess, CustomUser
 from pymilvus import connections, utility, FieldSchema, CollectionSchema, DataType, Collection
 
 
-def upload_to_vercel_blob(blob_path: str, content, content_type: str = "text/markdown") -> str:
+def sanitize_blob_filename(filename: str) -> str:
+    name, ext = filename.rsplit('.', 1) if '.' in filename else (filename, '')
+    name = name.strip()                            
+    name = re.sub(r'[^a-zA-Z0-9_\-]', '_', name)   
+    name = re.sub(r'_+', '_', name)                
+    name = name.strip('_')                          
+    return f"{name}.{ext}" if ext else name
+
+def get_request_session_with_blob_auth():
     """
-    Securely uploads data to Vercel Blob storage. 
-    Accepts both strings (for Markdown) and bytes (for Images).
+    Creates a requests.Session with Vercel Blob authentication if the token is available.
+    This centralizes the logic for secure API calls to Vercel Blob storage.
     """
+    session = requests.Session()
     blob_token = getattr(settings, 'VERCEL_BLOB_TOKEN', None)
     
+    if blob_token:
+        session.headers.update({"Authorization": f"Bearer {blob_token}"})
+        print("Vercel Blob token found and added to session headers.")
+    else:
+        print("Warning: Vercel Blob token is missing. API calls to Blob storage will fail.")
+    
+    return session
+
+def upload_to_vercel_blob(blob_path: str, content, content_type: str = "text/markdown") -> str:
+    """
+    Securely uploads data to Vercel Blob storage using the OFFICIAL Vercel Python SDK.
+    """
+    blob_token = getattr(settings, 'VERCEL_BLOB_TOKEN', None)
     if not blob_token:
         raise ValueError("Cannot upload: Vercel Blob token is missing.")
 
-    url = f"https://blob.vercel-storage.com/{blob_path}"
-    headers = {
-        "Authorization": f"Bearer {blob_token}",
-        "x-api-version": "7",         
-        "x-content-type": content_type, 
-    }
-    
-    # Handle both string (text) and binary (image) payloads securely
+    # Safely convert strings to bytes for the HTTP payload
     data = content.encode('utf-8') if isinstance(content, str) else content
     
-    response = None 
+    # 1. Initialize the official client explicitly with your token
+    client = BlobClient(token=blob_token)
+    
     try:
-        response = requests.put(url, headers=headers, data=data, timeout=30)
-        response.raise_for_status()
+        # 2. Upload using POSITIONAL arguments for the path and body
+        blob = client.put(
+            blob_path,                  # Positional Arg 1: The path
+            data,                       # Positional Arg 2: The file content
+            access="private",           # Keyword args for options
+            content_type=content_type,
+            add_random_suffix=True      # Prevents overwrite collisions
+        )
         
-        print(f"Successfully uploaded to Vercel Blob: {blob_path}")
-        return response.json().get("url")
+        # 3. The SDK returns an object with a .url property
+        print(f"Successfully uploaded to Vercel Blob: {blob.url}")
+        return blob.url
         
-    except requests.exceptions.RequestException as e:
-        error_details = response.text if response else "No response body"
-        print(f"Vercel Blob upload failed for {blob_path}: {str(e)} | Details: {error_details}")
-        raise RuntimeError(f"Failed to upload to Vercel Blob: {error_details}") from e 
+    except Exception as e:
+        print(f"Vercel Blob upload failed for {blob_path}: {str(e)}")
+        raise RuntimeError(f"Failed to upload to Vercel Blob: {str(e)}") from e
+         
 
 def get_collection_name(project_id) -> str:
     """

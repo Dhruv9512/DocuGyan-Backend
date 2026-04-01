@@ -186,7 +186,7 @@ def build_docu_pipeline_orchestrator(project_id: str, user_uuid: str):
         # Catch LangGraph/LLM/System failures gracefully
         try:
             fallback_process = DocuProcess.objects.get(project_id=project_id, user_uuid=user_uuid)
-            fallback_process.status = DocuProcess.StatusChoices.FAILED  # Changed to FAILED
+            fallback_process.status = getattr(DocuProcess.StatusChoices, 'FAILED', 'FAILED')
             fallback_process.error_message = str(e)
             fallback_process.save(update_fields=['status', 'error_message'])
         except Exception as fallback_err:

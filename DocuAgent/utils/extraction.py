@@ -10,7 +10,7 @@ import requests  # PyMuPDF
 
 # Import LLM Utility for Vision Calls
 from DocuAgent.utils.llm_calls import DocuAgentLLMCalls
-from DocuAgent.utils.utility import upload_to_vercel_blob, get_collection_name
+from DocuAgent.utils.utility import upload_to_vercel_blob, get_collection_name, get_request_session_with_blob_auth, sanitize_blob_filename
 from django.conf import settings
 
 
@@ -26,7 +26,7 @@ class DocuExtractor:
     def __init__(self, project_id: str, file_url: str):
         self.project_id = project_id
         self.file_url = file_url
-        self.session = requests.Session()
+        self.session = get_request_session_with_blob_auth()
         self.image_cache = {}  
         self.blob_collection = get_collection_name(self.project_id)
 
@@ -52,8 +52,7 @@ class DocuExtractor:
             else:
                 raise ValueError(f"Unsupported format: {extension}")
 
-            base_name = os.path.splitext(file_name)[0]
-            md_filename = f"{base_name}.md"
+            md_filename = sanitize_blob_filename(f"{os.path.splitext(file_name)[0].strip()}.md")
             blob_path = f"{self.blob_collection}/temp/{md_filename}"
 
             logger.info("Uploading extracted Markdown to Vercel Blob...")
@@ -521,5 +520,5 @@ def build_DocuExtractor(project_id: str, url: str) -> str:
         extracted_md_url = app.extract_from_url() 
         return extracted_md_url
     except Exception as e:
-        logger.error(f"DocuExtractor failed for {url}: {e}", exc_info=True)
+        logger.error(f"DocuExtractor failed: {e}", exc_info=True)
         raise RuntimeError(f"DocuExtractor failed: {str(e)}") from e

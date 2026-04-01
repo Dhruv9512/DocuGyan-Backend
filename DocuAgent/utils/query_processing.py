@@ -9,7 +9,7 @@ import requests
 # Import your Utilities!
 from DocuAgent.utils.llm_calls import DocuAgentLLMCalls
 from DocuAgent.utils.extraction import build_DocuExtractor 
-from DocuAgent.utils.utility import upload_to_vercel_blob, get_collection_name
+from DocuAgent.utils.utility import upload_to_vercel_blob, get_collection_name, get_request_session_with_blob_auth, sanitize_blob_filename
 
 from DocuAgent.schemas.llm_schemas import RefinedBatch
 
@@ -24,6 +24,7 @@ class QuestionRefiner:
     def __init__(self, project_id: str, file_url: str):
         self.project_id = project_id
         self.file_url = file_url
+        self.session = get_request_session_with_blob_auth()
         self.extracted_md_url = None
         self.refined_md_url = None
         self.blob_collection = get_collection_name(self.project_id)
@@ -48,7 +49,7 @@ class QuestionRefiner:
 
         # 1. Safely handle the download
         try:
-            response = requests.get(self.extracted_md_url, timeout=30)
+            response = self.session.get(self.extracted_md_url, timeout=30)
             response.raise_for_status()
             raw_text = response.text
         except requests.exceptions.RequestException as e:

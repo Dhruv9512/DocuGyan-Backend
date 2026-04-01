@@ -6,6 +6,7 @@ from typing import List
 # Import the neutral Plumbing
 from core.utils.llm_engine import LLMEngine
 
+
 logger = logging.getLogger(__name__)
 
 class DocuAgentLLMCalls:
@@ -40,7 +41,7 @@ class DocuAgentLLMCalls:
 
             # --- ATTEMPT 2: GROQ (Secondary for Vision) ---
             try:
-                groq = LLMEngine.get_groq_client(model_name="llama-3.2-90b-vision-preview", temperature=0.0)
+                groq = LLMEngine.get_groq_client(model_name="meta-llama/llama-4-scout-17b-16e-instruct", temperature=0.0)
                 return groq.invoke(lc_payload).content
                 
             except Exception as e2:
@@ -65,36 +66,36 @@ class DocuAgentLLMCalls:
     @classmethod
     def call_refine_questions(cls, batch_text: str):
         """
-        Industry-level 3-Tier Resilient Call.
+        Industry-level 2-Tier Resilient Call.
+        (HuggingFace removed because it lacks native function calling support).
         """
         # LAZY LOAD PROMPT & SCHEMA
         from DocuAgent.prompts.DocuExtractor_Prompts import REFINE_QUESTIONS_PROMPT
         from DocuAgent.schemas.llm_schemas import RefinedBatch
         
-        # 1. Initialize Clients 
+        # 1. Initialize Clients (Only those with Native Structured Output)
         groq_llm = LLMEngine.get_groq_client(temperature=0.0)
-        hf_llm = LLMEngine.get_huggingface_chat_client(temperature=0.0)
         gemini_llm = LLMEngine.get_gemini_client(temperature=0.0)
 
         # 2. Build the Chains
         tier_1 = (REFINE_QUESTIONS_PROMPT | groq_llm.with_structured_output(RefinedBatch)).with_retry(
             stop_after_attempt=3
         )
-        tier_2 = REFINE_QUESTIONS_PROMPT | hf_llm.with_structured_output(RefinedBatch)
-        tier_3 = REFINE_QUESTIONS_PROMPT | gemini_llm.with_structured_output(RefinedBatch)
+        # Gemini becomes tier 2
+        tier_2 = REFINE_QUESTIONS_PROMPT | gemini_llm.with_structured_output(RefinedBatch)
 
         # 3. Create the Waterfall Chain
-        resilient_waterfall = tier_1.with_fallbacks([tier_2, tier_3])
+        resilient_waterfall = tier_1.with_fallbacks([tier_2])
 
         try:
             # Politeness delay for free tier protection
             time.sleep(1.2) 
-            logger.info("Initiating 3-tier resilient call for Question Refinement...")
+            logger.info("Initiating resilient call for Question Refinement...")
             return resilient_waterfall.invoke({"questions": batch_text})
             
         except Exception as e:
-            logger.error(f"CRITICAL: All 3 LLM Tiers failed. Error: {e}")
-            raise RuntimeError(f"CRITICAL: All 3 LLM Tiers failed. Error: {e}") from e
+            logger.error(f"CRITICAL: All structured LLM Tiers failed. Error: {e}")
+            raise RuntimeError(f"CRITICAL: All structured LLM Tiers failed. Error: {e}") from e
 
     # ==========================================
     # Universal Payload Builder

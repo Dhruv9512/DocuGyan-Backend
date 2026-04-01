@@ -2,16 +2,18 @@ import uuid
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.permissions import AllowAny
 
 from DocuAgent.utils.utility import get_collection_name
 from .models import DocuProcess
 from .tasks import run_agentic_pipeline_task
 
 class InitDocuProcessView(APIView):
+    permission_classes = [AllowAny]  
     """Step 1: Creates the project ID so the frontend can upload files."""
     def post(self, request):
         user_uuid = request.data.get('user_uuid')
-        project_id = uuid.uuid4().hex[:10]
+        project_id = uuid.uuid4()
 
         # Create a placeholder record
         DocuProcess.objects.create(
@@ -26,6 +28,7 @@ class InitDocuProcessView(APIView):
 
 
 class DocuProcessView(APIView):
+    permission_classes = [AllowAny]
     """Step 2: Updates the record with URLs and starts the AI."""
     def post(self, request):
         project_id = request.data.get('project_id')

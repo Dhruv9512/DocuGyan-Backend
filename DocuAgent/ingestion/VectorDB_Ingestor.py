@@ -10,7 +10,7 @@ from langchain_core.documents import Document
 from langchain_milvus import Zilliz
 
 # Adjust import based on your actual project structure
-from DocuAgent.utils.utility import get_collection_name, create_zilliz_collection
+from DocuAgent.utils.utility import get_collection_name, create_zilliz_collection, get_request_session_with_blob_auth
 from core.utils.llm_engine import LLMEngine
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -33,6 +33,7 @@ class VectorDBIngestor:
         self.project_id = project_id
         self.collection_name = get_collection_name(project_id)
         self.extracted_doc_urls = extracted_doc_urls
+        self.session = get_request_session_with_blob_auth()
         self.embedding_model = LLMEngine.get_huggingface_embedding_client()
         self.vectorstore = None
     
@@ -83,7 +84,7 @@ class VectorDBIngestor:
         for url in doc_urls:
             try:
                 logger.info(f"Downloading extracted document: {url}")
-                response = requests.get(url, timeout=30)
+                response = self.session.get(url, timeout=30)
                 response.raise_for_status()
                 content = response.text
 

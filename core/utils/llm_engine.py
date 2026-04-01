@@ -12,7 +12,6 @@ class LLMEngine:
         return ChatGroq(
             model=model_name,
             temperature=temperature,
-            max_retries=3,
             api_key=getattr(settings, 'GROQ_API_KEY', None)
         )
 
@@ -38,7 +37,6 @@ class LLMEngine:
             repo_id=model_name,
             temperature=safe_temp,
             huggingfacehub_api_token=getattr(settings, 'HUGGINGFACE_API_KEY', None),
-            max_retries=3
         )
         return ChatHuggingFace(llm=llm)
     
@@ -47,8 +45,7 @@ class LLMEngine:
         from langchain_huggingface import HuggingFaceEndpoint, HuggingFaceEmbeddings
         
         llm = HuggingFaceEndpoint(
-            repo_id=model_name,
+            model=model_name,
             huggingfacehub_api_token=getattr(settings, 'HUGGINGFACE_API_KEY', None),
-            max_retries=3
         )
         return HuggingFaceEmbeddings(llm=llm)

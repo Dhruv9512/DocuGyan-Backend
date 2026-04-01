@@ -49,9 +49,9 @@ class DocuExtractorAgent:
             # Must return as a list so operator.add can combine them
             return {"extracted_doc_blob_url": [blob_url]}
         except Exception as e:
-            self.notifier.send_error(f"Failed to extract {url}: {str(e)}")
+            self.notifier.send_error(f"Failed to extract: {str(e)}")
             # Return empty list on failure so the reducer doesn't break
-            raise RuntimeError(f"Failed to extract {url}: {str(e)}") from e
+            raise RuntimeError(f"Failed to extract: {str(e)}") from e
 
     def refine_questions(self, state: ExtractorState):
         """
@@ -75,8 +75,10 @@ class DocuExtractorAgent:
             self.notifier.send_message("Extractor Agent: No original questions provided. Skipping refinement.")
             raise ValueError("No original questions provided for refinement.")
             
-        return {"refined_questions_blob_url": refined_urls.get("refined_questions_blob_url", None)}
-
+        final_url = refined_urls.get("refined_questions_blob_url")
+        return {"refined_questions_blob_url": [final_url] if final_url else []}
+    
+    
     # ==========================================
     # Graph Construction
     # ==========================================
