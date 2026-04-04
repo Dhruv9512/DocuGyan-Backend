@@ -103,18 +103,18 @@ def get_collection_name(project_id) -> str:
     return collection_name
 
 
-def create_zilliz_collection(collection_name: str, dim: int, zilliz_uri: str, zilliz_token: str) -> bool:
+def create_zilliz_collection(collection_name: str, dim: int ) -> bool:
     """
     Creates a collection in Zilliz matching the specified Document schema.
     """
     try:
         # 1. Connect to Zilliz Cloud
         connections.connect(
-            alias="default",
-            uri=zilliz_uri,
-            token=zilliz_token
+            alias=settings.ZILLIZ_ALIAS,
+            uri=settings.ZILLIZ_URI,
+            token=settings.ZILLIZ_TOKEN
         )
-        print(f"Connected to Zilliz at URI: {zilliz_uri}")
+        print(f"Connected to Zilliz at URI")
 
         # 2. Check if collection already exists
         try:
@@ -138,7 +138,6 @@ def create_zilliz_collection(collection_name: str, dim: int, zilliz_uri: str, zi
             
             # Metadata Mapping
             FieldSchema(name="project_id", dtype=DataType.VARCHAR, max_length=255),
-            FieldSchema(name="collection_name_meta", dtype=DataType.VARCHAR, max_length=255), 
             FieldSchema(name="source_title", dtype=DataType.VARCHAR, max_length=65535),
             FieldSchema(name="source_url", dtype=DataType.VARCHAR, max_length=65535),
             FieldSchema(name="page_number", dtype=DataType.INT64),

@@ -1,5 +1,6 @@
 from django.conf import settings
 
+
 class LLMEngine:
     """
     The Neutral Engine: A Factory for LangChain-compatible LLM Clients.
@@ -42,10 +43,9 @@ class LLMEngine:
     
     @staticmethod
     def get_huggingface_embedding_client(model_name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"):
-        from langchain_huggingface import HuggingFaceEndpoint, HuggingFaceEmbeddings
-        
-        llm = HuggingFaceEndpoint(
+        from langchain_huggingface import HuggingFaceEndpointEmbeddings
+
+        return HuggingFaceEndpointEmbeddings(
             model=model_name,
-            huggingfacehub_api_token=getattr(settings, 'HUGGINGFACE_API_KEY', None),
+            huggingfacehub_api_token=getattr(settings, 'HUGGINGFACE_API_KEY', None)
         )
-        return HuggingFaceEmbeddings(llm=llm)

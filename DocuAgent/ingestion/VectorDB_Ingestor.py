@@ -1,5 +1,6 @@
 import logging
 
+from pymilvus import Collection, connections
 import requests
 import re
 from typing import List
@@ -7,7 +8,7 @@ from django.conf import settings
 
 # Import the industry-standard Document format
 from langchain_core.documents import Document
-from langchain_milvus import Zilliz
+from langchain_community.vectorstores import Milvus
 
 # Adjust import based on your actual project structure
 from DocuAgent.utils.utility import get_collection_name, create_zilliz_collection, get_request_session_with_blob_auth
@@ -36,6 +37,7 @@ class VectorDBIngestor:
         self.session = get_request_session_with_blob_auth()
         self.embedding_model = LLMEngine.get_huggingface_embedding_client()
         self.vectorstore = None
+        self.is_collection = False
     
     def run(self) -> bool:
         try:
@@ -199,13 +201,16 @@ class VectorDBIngestor:
                 raise ValueError("No chunked documents to insert into the vector database.")
 
             logger.info("Connecting to Zilliz....")
-            create_zilliz_collection(
-                collection_name=self.collection_name,
-                dim=384,
-                zilliz_uri=getattr(settings, 'ZILLIZ_URI', None),
-                zilliz_token=getattr(settings, 'ZILLIZ_TOKEN', None),
-                alias=getattr(settings, 'ZILLIZ_ALIAS', 'default')
-            )
+            
+            if not self.is_collection:
+                self.is_collection=create_zilliz_collection(
+                    collection_name=self.collection_name,
+                    dim=384
+                )
+                col = Collection(self.collection_name)
+                col.load()
+                connections.disconnect("default")
+                logger.info("Disconnected pymilvus default alias before LangChain reconnect.")
 
             for i in range(0, len(chunked_documents), BATCH_SIZE):
                 docs = chunked_documents[i:i + BATCH_SIZE]
@@ -227,17 +232,23 @@ class VectorDBIngestor:
 
         try:
             if not self.vectorstore: 
-                self.vectorstore = Zilliz(
+                self.vectorstore = Milvus(
                     collection_name=self.collection_name,
                     embedding_function=self.embedding_model,
                     connection_args={
                         "uri": getattr(settings, 'ZILLIZ_URI', None),
                         "token": getattr(settings, 'ZILLIZ_TOKEN', None),
-                        "alias": getattr(settings, 'ZILLIZ_ALIAS', 'default')
-                    }
+                        "secure": True,
+                        "timeout": 60
+                    },
+                    primary_field="pk",          
+                    text_field="page_content",   
+                    vector_field="vector",
+                    auto_id=True   
                 )
+            logger.info(f"Embedding and inserting batch of {len(batch)} docs...")
             self.vectorstore.add_documents(batch)
-            logger.info(f"Inserted batch of {len(batch)} documents into Zilliz.")
+            logger.info("Batch insert complete.")
             return True
 
         except Exception as e:
