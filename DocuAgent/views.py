@@ -15,6 +15,9 @@ class InitDocuProcessView(APIView):
         user_uuid = request.data.get('user_uuid')
         project_id = uuid.uuid4()
 
+        if not user_uuid:
+            return Response({"error": "user_uuid is required."}, status=status.HTTP_400_BAD_REQUEST)
+        
         # Create a placeholder record
         DocuProcess.objects.create(
             project_id=project_id,
