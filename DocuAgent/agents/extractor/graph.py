@@ -2,7 +2,6 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.constants import Send
 
 from DocuAgent.utils.extraction import build_DocuExtractor
-from DocuAgent.utils.query_processing import build_QuestionRefiner
 from DocuAgent.websocket.notifier import Notifier
 from DocuAgent.schemas.agent_schemas import ExtractorState, ExtractionWorkerState
 
@@ -66,7 +65,7 @@ class DocuExtractorAgent:
         if original_questions:
             try:
                 # If your QuestionRefiner is adapted to take a list of strings directly:
-                refined_urls = build_QuestionRefiner(self.project_id, original_questions)
+                refined_urls = build_DocuExtractor(self.project_id, original_questions)
                 self.notifier.send_message("Extractor Agent: Question refinement complete.")
             except Exception as e:
                 self.notifier.send_error(f"Failed to refine questions: {str(e)}")
@@ -75,8 +74,8 @@ class DocuExtractorAgent:
             self.notifier.send_message("Extractor Agent: No original questions provided. Skipping refinement.")
             raise ValueError("No original questions provided for refinement.")
             
-        final_url = refined_urls.get("refined_questions_blob_url")
-        return {"refined_questions_blob_url": [final_url] if final_url else []}
+        final_url = refined_urls.get("extracted_questions_blob_url")
+        return {"extracted_questions_blob_url": [final_url] if final_url else []}
     
     
     # ==========================================

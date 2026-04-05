@@ -14,7 +14,7 @@ class ExtractorState(MessagesState):
     
     # Annotated so parallel Map-Reduce workers append to the list instead of overwriting
     extracted_doc_blob_url: Annotated[list[str], operator.add]
-    refined_questions_blob_url: Annotated[list[str], operator.add]
+    extracted_questions_blob_url: Annotated[list[str], operator.add]
 
 class OrchestratorState(MessagesState):
     """
@@ -30,7 +30,10 @@ class OrchestratorState(MessagesState):
     
     # Must match the Extractor exactly to seamlessly sync state
     extracted_doc_blob_url: Annotated[list[str], operator.add]
-    refined_questions_blob_url: Annotated[list[str], operator.add]
+    extracted_questions_blob_url: Annotated[list[str], operator.add]
+
+  
+  
 
 # ==========================================
 # Graph States for Parallel Workers

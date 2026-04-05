@@ -37,7 +37,7 @@ class DocuPipelineOrchestrator:
         strategy = state.get("rag_strategy", "vector")
         self.notifier.send_message(f"Orchestrator: Routing to {strategy.capitalize()} Ingestor...")
         
-        if not state.get("refined_questions_blob_url") or not state.get("extracted_doc_blob_url"):
+        if not state.get("extracted_questions_blob_url") or not state.get("extracted_doc_blob_url"):
             self.notifier.send_error(f"Docuextractor Agent failed to produce extracted urls of refined question url and referenced urls. Halting pipeline. State: {state}")
             stop_task()
 
