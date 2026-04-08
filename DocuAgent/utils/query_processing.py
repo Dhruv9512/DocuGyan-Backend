@@ -36,7 +36,7 @@ class QuestionRefiner:
         return {
             "project_id": self.project_id,
             "raw_questions_blob_url": self.extracted_md_url,
-            "refined_questions_blob_url": self.refined_md_url,
+            "extracted_questions_blob_url": self.refined_md_url,
         }
 
     def _extract(self) -> str:

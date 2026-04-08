@@ -75,8 +75,8 @@ class DocuExtractorAgent:
             self.notifier.send_message("Extractor Agent: No original questions provided. Skipping refinement.")
             raise ValueError("No original questions provided for refinement.")
             
-        final_url = refined_urls.get("refined_questions_blob_url")
-        return {"refined_questions_blob_url": [final_url] if final_url else []}
+        final_url = refined_urls.get("extracted_questions_blob_url")
+        return {"extracted_questions_blob_url": [final_url] if final_url else []}
     
     
     # ==========================================

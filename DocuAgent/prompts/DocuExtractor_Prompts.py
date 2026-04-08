@@ -78,7 +78,7 @@ PDF_EXTRACTION_PROMPT = (
 # ==============================================
 
 # Version: 1.0.0
-_SYSTEM_PROMPT = """You are an expert educational AI data processor. Your strict task is to extract, clean, and refine questions from messy, raw text blocks.
+_REFINE_QUESTIONS_SYSTEM_PROMPT = """You are an expert educational AI data processor. Your strict task is to extract, clean, and refine questions from messy, raw text blocks.
 
 Follow these STRICT RULES:
 
@@ -124,9 +124,9 @@ EXAMPLES OF REFINEMENT:
 
 Output ONLY the structured numbered list of refined questions. No conversational filler, no section headers, no extra commentary."""
 
-_USER_PROMPT = "Process the following raw text blocks and extract the refined questions:\n\n{questions}"
+_REFINE_QUESTIONS_USER_PROMPT = "Process the following raw text blocks and extract the refined questions:\n\n{questions}"
 
 REFINE_QUESTIONS_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", _SYSTEM_PROMPT),
-    ("user", _USER_PROMPT)
+    ("system", _REFINE_QUESTIONS_SYSTEM_PROMPT),
+    ("user", _REFINE_QUESTIONS_USER_PROMPT)
 ])

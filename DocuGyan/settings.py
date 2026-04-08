@@ -56,6 +56,8 @@ ZILLIZ_URI = os.environ.get("ZILLIZ_URI")
 ZILLIZ_TOKEN = os.environ.get("ZILLIZ_TOKEN")
 ZILLIZ_ALIAS = os.environ.get("ZILLIZ_ALIAS", "default")
 
+# -----Internet search API Keys-----
+TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY")
 
 
 # Application definition
