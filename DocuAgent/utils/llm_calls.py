@@ -101,21 +101,11 @@ class DocuAgentLLMCalls:
         if cls._planner_chain is not None:
             return cls._planner_chain
 
-        primary    = LLMEngine.get_groq_client(
-            model_name="deepseek-r1-distill-llama-70b", temperature=0.1
-        )
-        fallback_1 = LLMEngine.get_groq_client(
-            model_name="llama-3.3-70b-versatile", temperature=0.1
-        )
-        fallback_2 = LLMEngine.get_groq_client(
-            model_name="llama-3.1-70b-versatile", temperature=0.1
-        )
-        fallback_3 = LLMEngine.get_groq_client(
-            model_name="gemma2-9b-it", temperature=0.1
-        )
-        fallback_hf = LLMEngine.get_huggingface_chat_client(
-            model_name="Qwen/Qwen2.5-72B-Instruct", temperature=0.1
-        )
+        primary    = LLMEngine.get_groq_client(model_name="deepseek-r1-distill-llama-70b", temperature=0.1)
+        fallback_1 = LLMEngine.get_groq_client(model_name="llama-3.3-70b-versatile", temperature=0.1)
+        fallback_2 = LLMEngine.get_groq_client(model_name="llama-3.1-70b-versatile", temperature=0.1)
+        fallback_3 = LLMEngine.get_groq_client(model_name="gemma2-9b-it", temperature=0.1)
+        fallback_hf = LLMEngine.get_huggingface_chat_client(model_name="Qwen/Qwen2.5-72B-Instruct", temperature=0.1)
 
         cls._planner_chain = (
             primary.with_structured_output(PlannerOutput)
@@ -123,7 +113,7 @@ class DocuAgentLLMCalls:
                 fallback_1.with_structured_output(PlannerOutput),
                 fallback_2.with_structured_output(PlannerOutput),
                 fallback_3.with_structured_output(PlannerOutput),
-                fallback_hf.with_structured_output(PlannerOutput),
+                fallback_hf.with_structured_output(PlannerOutput, method="json_mode"),  # ← fix
             ])
         )
 
@@ -152,9 +142,8 @@ class DocuAgentLLMCalls:
         try:
             result: PlannerOutput = cls._get_planner_chain().invoke(messages)
             logger.debug(
-                "[Planner] category=%s | queries=%d | words=%d",
+                "[Planner] category=%s | words=%d",
                 result.question_category,
-                len(result.search_queries),
                 result.target_word_count,
             )
             return result
@@ -215,7 +204,7 @@ class DocuAgentLLMCalls:
             .with_fallbacks([
                 fallback_1.with_structured_output(RetrievalGraderOutput),
                 fallback_2.with_structured_output(RetrievalGraderOutput),
-                fallback_hf.with_structured_output(RetrievalGraderOutput),
+                fallback_hf.with_structured_output(RetrievalGraderOutput, method="json_mode"),
             ])
         )
 
@@ -441,34 +430,30 @@ class DocuAgentLLMCalls:
         if cls._refiner_chain is not None:
             return cls._refiner_chain
 
-        primary = LLMEngine.get_groq_client(
-            model_name="llama-3.3-70b-versatile", temperature=0.0
-        )
-        fallback_1 = LLMEngine.get_groq_client(
-            model_name="deepseek-r1-distill-llama-70b", temperature=0.0
-        )
-        fallback_2 = LLMEngine.get_groq_client(
-            model_name="gemma2-9b-it", temperature=0.0
-        )
-        fallback_3 = LLMEngine.get_huggingface_chat_client(
-            model_name="Qwen/Qwen2.5-72B-Instruct", temperature=0.0
-        )
-        fallback_4 = LLMEngine.get_groq_client(
-            model_name="llama-3.1-70b-versatile", temperature=0.0
-        )
+        primary = LLMEngine.get_groq_client(model_name="llama-3.3-70b-versatile", temperature=0.0)
+        fallback_1 = LLMEngine.get_groq_client(model_name="deepseek-r1-distill-llama-70b", temperature=0.0)
+        fallback_2 = LLMEngine.get_groq_client(model_name="gemma2-9b-it", temperature=0.0)
+        fallback_3 = LLMEngine.get_huggingface_chat_client(model_name="Qwen/Qwen2.5-72B-Instruct", temperature=0.0)
+        fallback_4 = LLMEngine.get_groq_client(model_name="llama-3.1-70b-versatile", temperature=0.0)
 
-        cls._refiner_chain = (
-            (REFINE_QUESTIONS_PROMPT | primary.with_structured_output(RefinedBatch))
-            .with_fallbacks([
-                REFINE_QUESTIONS_PROMPT | fallback_1.with_structured_output(RefinedBatch),
-                REFINE_QUESTIONS_PROMPT | fallback_2.with_structured_output(RefinedBatch),
-                REFINE_QUESTIONS_PROMPT | fallback_3.with_structured_output(RefinedBatch),
-                REFINE_QUESTIONS_PROMPT | fallback_4.with_structured_output(RefinedBatch),
-            ])
-        )
+        def make_refiner_chain(llm, use_json_mode=False):
+            structured = (
+                llm.with_structured_output(RefinedBatch, method="json_mode")
+                if use_json_mode
+                else llm.with_structured_output(RefinedBatch)
+            )
+            return REFINE_QUESTIONS_PROMPT | structured
+
+        cls._refiner_chain = make_refiner_chain(primary).with_fallbacks([
+            make_refiner_chain(fallback_1),
+            make_refiner_chain(fallback_2),
+            make_refiner_chain(fallback_3, use_json_mode=True), 
+            make_refiner_chain(fallback_4),
+        ])
 
         logger.info("[DocuAgentLLMCalls] Refiner chain initialized.")
         return cls._refiner_chain
+
 
 
     @classmethod
@@ -482,7 +467,7 @@ class DocuAgentLLMCalls:
 
         Args:
             batch_text: Raw question blocks joined by double newlines,
-                        each prefixed with '- ' (as formatted by _process_batch).
+            each prefixed with '- ' (as formatted by _process_batch).
 
         Returns:
             RefinedBatch containing a list of RefinedQuestion objects.
@@ -551,31 +536,26 @@ class DocuAgentLLMCalls:
         if cls._diagram_chain is not None:
             return cls._diagram_chain
 
-        primary = LLMEngine.get_groq_client(
-            model_name="llama-3.3-70b-versatile", temperature=0.1
-        )
-        fallback_1 = LLMEngine.get_groq_client(
-            model_name="deepseek-r1-distill-llama-70b", temperature=0.1
-        )
-        fallback_2 = LLMEngine.get_groq_client(
-            model_name="gemma2-9b-it", temperature=0.1
-        )
-        fallback_3 = LLMEngine.get_huggingface_chat_client(
-            model_name="Qwen/Qwen2.5-72B-Instruct", temperature=0.1
-        )
-        fallback_4 = LLMEngine.get_groq_client(
-            model_name="llama-3.1-70b-versatile", temperature=0.1
-        )
+        primary = LLMEngine.get_groq_client(model_name="llama-3.3-70b-versatile", temperature=0.1)
+        fallback_1 = LLMEngine.get_groq_client(model_name="deepseek-r1-distill-llama-70b", temperature=0.1)
+        fallback_2 = LLMEngine.get_groq_client(model_name="gemma2-9b-it", temperature=0.1)
+        fallback_3 = LLMEngine.get_huggingface_chat_client(model_name="Qwen/Qwen2.5-72B-Instruct", temperature=0.1)
+        fallback_4 = LLMEngine.get_groq_client(model_name="llama-3.1-70b-versatile", temperature=0.1)
 
-        cls._diagram_chain = (
-            DIAGRAM_GENERATOR_PROMPT | primary.with_structured_output(DiagramOutput)
-            .with_fallbacks([
-                DIAGRAM_GENERATOR_PROMPT | fallback_1.with_structured_output(DiagramOutput),
-                DIAGRAM_GENERATOR_PROMPT | fallback_2.with_structured_output(DiagramOutput),
-                DIAGRAM_GENERATOR_PROMPT | fallback_3.with_structured_output(DiagramOutput),
-                DIAGRAM_GENERATOR_PROMPT | fallback_4.with_structured_output(DiagramOutput),
-            ])
-        )
+        def make_diagram_chain(llm, use_json_mode=False):
+            structured = (
+                llm.with_structured_output(DiagramOutput, method="json_mode")
+                if use_json_mode
+                else llm.with_structured_output(DiagramOutput)
+            )
+            return DIAGRAM_GENERATOR_PROMPT | structured 
+
+        cls._diagram_chain = make_diagram_chain(primary).with_fallbacks([
+            make_diagram_chain(fallback_1),
+            make_diagram_chain(fallback_2),
+            make_diagram_chain(fallback_3, use_json_mode=True),  
+            make_diagram_chain(fallback_4),
+        ])
 
         logger.info("[DocuAgentLLMCalls] Diagram chain initialized.")
         return cls._diagram_chain

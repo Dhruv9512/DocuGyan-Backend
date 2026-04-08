@@ -12,7 +12,7 @@ from DocuAgent.schemas.llm_schemas import RAGClassification
 
 # Import the Extractor Agent Subgraph
 from DocuAgent.agents.extractor.graph import build_docu_extractor_agent
-
+from DocuAgent.agents.academic.graph import build_academic_agent
 from DocuAgent.ingestion.VectorDB_Ingestor import build_vector_db_ingestor
 
 class DocuPipelineOrchestrator:
@@ -47,10 +47,24 @@ class DocuPipelineOrchestrator:
             return "graph_rag_ingest"
         else:
             return "vectorless_ingest"
+    
+    def domain_router(self, state: OrchestratorState) -> Literal["academic_agent", "financial_agent", "audit_agent"]:
+        """Routes to the correct specialist agent based on domain classification."""
+        domain = state.get("domain") or "audit" 
+        self.notifier.send_message(f"Orchestrator: Routing to {domain.capitalize()} Specialist Agent...")
+        
+        if domain == "academic":
+            return "academic_agent"
+        elif domain == "financial":
+            return "financial_agent"
+        elif domain == "audit":
+            return "audit_agent"
+        else:
+            return "academic_agent" 
 
-    # ==========================================
-    # Pipeline Nodes (Workers & Evaluators)
-    # ==========================================
+    # =========================================
+    # Evaluator Nodes for Classification
+    # =========================================
     def classify_rag_strategy(self, state: OrchestratorState) -> dict:
         """
         EVALUATOR AGENT: This is the ONLY place the LLM makes a decision in this pipeline.
@@ -62,7 +76,22 @@ class DocuPipelineOrchestrator:
             "rag_strategy": "vector",
             "rag_reasoning": "Vector is the default strategy for MVP.",
         }
+    
+    def classify_domain(self, state: OrchestratorState) -> dict:
+        """
+        EVALUATOR AGENT: Reads a snippet of references and questions to determine the domain.
+        """
+        self.notifier.send_message("Evaluator Agent: Classifying document domain...")
+        
+        # NOTE: A real LLM structured output call will go here using the DomainClassification schema.
+        # For now, we mock the response to allow the graph to run and test the router.
+        return {
+            "domain": "academic"
+        }
 
+    # =================================
+    # Pipeline Nodes for Ingestion 
+    # =================================
     def vector_rag_ingest(self, state: OrchestratorState) -> dict:
         """Worker node: Ingests to Vector DB."""
         self.notifier.send_message("Vector Ingestor: Processing chunks and generating embeddings...")
@@ -88,6 +117,25 @@ class DocuPipelineOrchestrator:
         self.notifier.send_message("Vectorless Ingestor: Storing raw text data...")
         # Add actual ingestion logic here in the future
         return {"ingestion_done": True}
+    
+
+    # =========================================
+    # 
+    # =========================================
+    def financial_agent(self, state: OrchestratorState) -> dict:
+        """Placeholder for Financial Sub-graph"""
+        self.notifier.send_message("Financial Agent: Processing financial models and tables...")
+        return {}
+
+    def audit_agent(self, state: OrchestratorState) -> dict:
+        """Placeholder for Audit Sub-graph"""
+        self.notifier.send_message("Audit Agent: Cross-referencing compliance and risk factors...")
+        return {}
+    
+    def academic_agent(self, state: OrchestratorState) -> dict:
+        """Placeholder for Academic Sub-graph"""
+        self.notifier.send_message("Academic Agent: Analyzing theories and citations...")
+        return {}
 
     # ==========================================
     # Network Graph Construction
@@ -101,22 +149,34 @@ class DocuPipelineOrchestrator:
         graph.add_node("vector_rag_ingest", self.vector_rag_ingest)
         graph.add_node("graph_rag_ingest", self.graph_rag_ingest)
         graph.add_node("vectorless_ingest", self.vectorless_ingest)
+        
+        # New Domain & Sub-Agent Nodes
+        graph.add_node("classify_domain", self.classify_domain)
+        graph.add_node("academic_agent", build_academic_agent(self.project_id))
+        graph.add_node("financial_agent", self.financial_agent)
+        graph.add_node("audit_agent", self.audit_agent)
   
-        # 2. Define the exact linear flow of the pipeline
+        # 2. Define the Flow
         
-        # Pipeline ALWAYS starts with extraction
+        # Extraction -> RAG Classification
         graph.add_edge(START, "extraction_agent")
-        
-        # Extraction always flows directly into Classification next
         graph.add_edge("extraction_agent", "classify_rag")
         
-        # Classification branches out to the specific ingestor
+        # RAG Classification -> Specific Ingestor
         graph.add_conditional_edges("classify_rag", self.ingestion_router)
 
-        # All ingestors mark the end of the pipeline
-        graph.add_edge("vector_rag_ingest", END)
-        graph.add_edge("graph_rag_ingest", END)
-        graph.add_edge("vectorless_ingest", END)
+        # ALL Ingestors -> Domain Classification
+        graph.add_edge("vector_rag_ingest", "classify_domain")
+        graph.add_edge("graph_rag_ingest", "classify_domain")
+        graph.add_edge("vectorless_ingest", "classify_domain")
+
+        # Domain Classification -> Specialist Agent
+        graph.add_conditional_edges("classify_domain", self.domain_router)
+
+        # All specialist agents mark the end of the pipeline
+        graph.add_edge("academic_agent", END)
+        graph.add_edge("financial_agent", END)
+        graph.add_edge("audit_agent", END)
 
         return graph.compile()
 
@@ -131,9 +191,19 @@ class DocuPipelineOrchestrator:
             "ingestion_done": False,
             "rag_reasoning": "",
             "original_questions": self.base_instance.question_urls if self.base_instance.question_urls else self.base_instance.text_questions,
-            "refined_questions_blob_url": [],
+            "extracted_questions_blob_url": [],
+            "domain": "",
+            "final_answers_blob_url": [],
         }
-        return self.graph.invoke(initial_state)
+
+        config = {
+            "max_concurrency": 10,  
+            "recursion_limit": 50,
+            "configurable": {
+                "thread_id": self.project_id
+            }
+        }
+        return self.graph.invoke(initial_state, config=config)
 
 # ==================================================================
 #  Builder Function to Initialize and Run the Orchestrator
@@ -164,14 +234,16 @@ def build_docu_pipeline_orchestrator(project_id: str, user_uuid: str):
         # 3. COMMIT SUCCESS: Mark as completed
         docu_process.status = DocuProcess.StatusChoices.COMPLETED
         docu_process.extracted_doc_urls = result.get("extracted_doc_blob_url", [])
-        docu_process.refined_question_urls = result.get("refined_questions_blob_url", [])
+        docu_process.refined_question_urls = result.get("extracted_questions_blob_url", [])
         docu_process.ingestion_strategy = result.get("rag_strategy", "")
-        docu_process.save(update_fields=['status', 'extracted_doc_urls', 'refined_question_urls', 'ingestion_strategy'])
+        docu_process.results_url = result.get("final_answers_blob_url", [])
+        docu_process.save(update_fields=['status', 'extracted_doc_urls', 'refined_question_urls', 'ingestion_strategy', 'results_url'])
         
         # Notify completion
         notifier.send_completed(final_result={
             "extracted_docs_blob_urls": result.get("extracted_doc_blob_url"), 
-            "refined_questions_blob_url": result.get("refined_questions_blob_url"),
+            "extracted_questions_blob_url": result.get("extracted_questions_blob_url"),
+            "final_answers_blob_url": result.get("final_answers_blob_url"),
         })
 
         return result
