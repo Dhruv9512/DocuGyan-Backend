@@ -2,17 +2,20 @@ import uuid
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from core.authentication import CookieJWTAuthentication
 
 from DocuAgent.utils.utility import get_collection_name
 from .models import DocuProcess
 from .tasks import run_agentic_pipeline_task
 
 class InitDocuProcessView(APIView):
-    permission_classes = [AllowAny]  
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CookieJWTAuthentication]
     """Step 1: Creates the project ID so the frontend can upload files."""
     def post(self, request):
-        user_uuid = request.data.get('user_uuid')
+        # user_uuid = request.data.get('user_uuid')
+        user_uuid = str(request.user.user_uuid)
         title = request.data.get('text', '')
         description = request.data.get('description', '')
         project_id = uuid.uuid4()
@@ -41,13 +44,15 @@ class InitDocuProcessView(APIView):
 
 
 class DocuProcessView(APIView):
-    permission_classes = [AllowAny]
-    """Step 2: Updates the record with URLs and starts the AI."""
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CookieJWTAuthentication]
+    """Updates the record with URLs and starts the AI."""
     def post(self, request):
         project_id = request.data.get('project_id')
         reference_urls = request.data.get('reference_urls', [])
         question_urls = request.data.get('question_urls', [])
-        user_uuid = request.data.get('user_uuid')
+        # user_uuid = request.data.get('user_uuid')
+        user_uuid = str(request.user.user_uuid)
 
         if not project_id:
             return Response({"error": "project_id is required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -78,11 +83,13 @@ class DocuProcessView(APIView):
     
 # Show the DocuProcess Data for a given project_id
 class DocuProcessDataView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CookieJWTAuthentication]
 
     def get(self, request):
         project_id = request.query_params.get('project_id')
-        user_uuid = request.query_params.get('user_uuid')
+        # user_uuid = request.query_params.get('user_uuid')
+        user_uuid = str(request.user.user_uuid)
 
         if not project_id:
             return Response({"error": "project_id is required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -99,7 +106,7 @@ class DocuProcessDataView(APIView):
                 "description": docu_process.description,
                 "reference_urls": docu_process.reference_urls,
                 "question_urls": docu_process.question_urls,
-                "result_urls": docu_process.result_urls,
+                "result_urls": docu_process.results_url,
                 "created_at": docu_process.created_at,
                 "status": docu_process.status,
             }
@@ -110,10 +117,12 @@ class DocuProcessDataView(APIView):
 
 # List of all DocuProcesses for a given user_uuid
 class DocuProcessListView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [CookieJWTAuthentication]
 
     def get(self, request):
-        user_uuid = request.query_params.get('user_uuid')
+        # user_uuid = request.query_params.get('user_uuid')
+        user_uuid = str(request.user.user_uuid)
 
         if not user_uuid:
             return Response({"error": "user_uuid is required."}, status=status.HTTP_400_BAD_REQUEST)
