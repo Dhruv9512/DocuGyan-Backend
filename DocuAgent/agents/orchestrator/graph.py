@@ -39,7 +39,8 @@ class DocuPipelineOrchestrator:
         
         if not state.get("extracted_questions_blob_url") or not state.get("extracted_doc_blob_url"):
             self.notifier.send_error(f"Docuextractor Agent failed to produce extracted urls of refined question url and referenced urls. Halting pipeline. State: {state}")
-            stop_task()
+            self.base_instance.status = getattr(DocuProcess.StatusChoices, 'FAILED', 'FAILED')
+            raise RuntimeError("Docuextractor Agent failed to produce extracted urls of refined question url and referenced urls. Halting pipeline.")
 
         if strategy == "vector":
             return "vector_rag_ingest"

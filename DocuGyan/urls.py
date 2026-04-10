@@ -19,8 +19,8 @@ from django.urls import path,include
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path("agent/", include("DocuAgent.urls")),
-    path("chat/",include("DocuChat.urls")),
-    path("core/", include("core.urls")),
+    path("api/agent/", include("DocuAgent.urls")),
+    path("api/chat/",include("DocuChat.urls")),
+    path("api/core/", include("core.urls")),
     path("", include("users.urls")),
 ]

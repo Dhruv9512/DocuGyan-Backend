@@ -37,6 +37,38 @@ class DocuProcessConsumer(AsyncWebsocketConsumer):
             logger.info(f"WebSocket disconnected from {self.room_group_name}")
 
     # -------------------------------------------------------------
+    # Handle messages received from the Frontend (Client)
+    # -------------------------------------------------------------
+    async def receive(self, text_data=None, bytes_data=None):
+        """
+        Catches messages sent by the frontend via socket.send()
+        """
+        if text_data:
+            try:
+                # 1. Try to parse as JSON (Best Practice)
+                data = json.loads(text_data)
+                message_type = data.get('type')
+
+                if message_type == 'ping':
+                    # Respond with a 'pong' to keep the connection alive
+                    await self.send(text_data=json.dumps({
+                        'type': 'pong',
+                        'message': 'Connection active'
+                    }))
+                else:
+                    logger.info(f"Received unhandled message type from FE: {message_type}")
+
+            except json.JSONDecodeError:
+                # 2. Fallback: If the frontend just sends a raw string like "ping"
+                if text_data.strip().lower() == 'ping':
+                    await self.send(text_data=json.dumps({
+                        'type': 'pong',
+                        'message': 'Connection active'
+                    }))
+                else:
+                    logger.warning(f"Received invalid JSON from client: {text_data}")
+
+    # -------------------------------------------------------------
     # Method matches "type": "send_message" from Notifier
     # -------------------------------------------------------------
     async def send_message(self, event):
