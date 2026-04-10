@@ -53,7 +53,6 @@ def upload_to_vercel_blob(blob_path: str, content, content_type: str = "text/mar
             data,                       # Positional Arg 2: The file content
             access="private",           # Keyword args for options
             content_type=content_type,
-            add_random_suffix=True      # Prevents overwrite collisions
         )
         
         # 3. The SDK returns an object with a .url property

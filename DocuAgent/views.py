@@ -50,13 +50,19 @@ class DocuProcessView(APIView):
     def post(self, request):
         project_id = request.data.get('project_id')
         reference_urls = request.data.get('reference_urls', [])
-        question_urls = request.data.get('question_urls', [])
+        question_urls = request.data.get('question_urls', "")
         # user_uuid = request.data.get('user_uuid')
         user_uuid = str(request.user.user_uuid)
 
         if not project_id:
             return Response({"error": "project_id is required."}, status=status.HTTP_400_BAD_REQUEST)
 
+        if not user_uuid:
+            return Response({"error": "user_uuid is required."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not reference_urls and not question_urls:
+            return Response({"error": "At least one of reference_urls or question_urls is required."}, status=status.HTTP_400_BAD_REQUEST)
+        
         # 1. Fetch the project we created in Step 1
         try:
             docu_process = DocuProcess.objects.get(project_id=project_id, user_uuid=user_uuid)
