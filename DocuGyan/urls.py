@@ -21,5 +21,6 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path("agent/", include("DocuAgent.urls")),
     path("chat/",include("DocuChat.urls")),
+    path("core/", include("core.urls")),
     path("", include("users.urls")),
 ]
