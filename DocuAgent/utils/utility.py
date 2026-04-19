@@ -5,7 +5,8 @@ import re
 
 from vercel.blob import BlobClient
 from DocuAgent.models import DocuProcess, CustomUser
-from pymilvus import connections, utility, FieldSchema, CollectionSchema, DataType, Collection
+from pymilvus import connections, utility, FieldSchema, CollectionSchema, DataType, Collection, MilvusClient
+
 
 
 def sanitize_blob_filename(filename: str) -> str:
@@ -64,6 +65,51 @@ def upload_to_vercel_blob(blob_path: str, content, content_type: str = "text/mar
         raise RuntimeError(f"Failed to upload to Vercel Blob: {str(e)}") from e
          
 
+def delete_blobs_in_collection(folder_name: str) -> None:
+    """
+    Securely deletes an entire folder, including ALL sub-folders and files, 
+    from Vercel Blob storage using the OFFICIAL Vercel Python SDK.
+    """
+    blob_token = getattr(settings, 'VERCEL_BLOB_TOKEN', None)
+    if not blob_token:
+        raise ValueError("Cannot delete: Vercel Blob token is missing.")
+
+    # Ensure trailing slash so the prefix matches the folder and everything inside it
+    prefix = folder_name if folder_name.endswith('/') else f"{folder_name}/"
+    client = BlobClient(token=blob_token)
+    
+    try:
+        cursor = None
+        has_more = True
+        total_deleted = 0
+        
+        # 1. Loop to handle pagination in case the folder has hundreds/thousands of items
+        while has_more:
+            # Pass the cursor if one exists to get the next batch of files
+            listing = client.list_objects(prefix=prefix, cursor=cursor)
+            
+            # Extract URLs
+            urls_to_delete = [blob.url for blob in listing.blobs]
+            
+            # 2. Batch delete this chunk
+            if urls_to_delete:
+                client.delete(urls_to_delete)
+                total_deleted += len(urls_to_delete)
+                
+            # 3. Check if there are more sub-folders/files left to fetch
+            cursor = getattr(listing, 'cursor', None)
+            has_more = bool(cursor)
+            
+        if total_deleted == 0:
+            print(f"No blobs found in collection folder: {prefix}")
+        else:
+            print(f"Successfully deleted {total_deleted} items (including sub-folders) from {prefix}")
+            
+    except Exception as e:
+        print(f"Vercel Blob deletion failed for folder {prefix}: {str(e)}")
+        raise RuntimeError(f"Failed to delete folder from Vercel Blob: {str(e)}") from e
+    
+
 def get_collection_name(project_id) -> str:
     """
     Generates a safe collection name for Vector DBs by querying the database 
@@ -101,10 +147,10 @@ def get_collection_name(project_id) -> str:
     
     return collection_name
 
-
 def create_zilliz_collection(collection_name: str, dim: int ) -> bool:
     """
     Creates a collection in Zilliz matching the specified Document schema.
+    Enforces the 5-collection free tier limit by dropping the oldest collection.
     """
     try:
         # 1. Connect to Zilliz Cloud
@@ -113,7 +159,7 @@ def create_zilliz_collection(collection_name: str, dim: int ) -> bool:
             uri=settings.ZILLIZ_URI,
             token=settings.ZILLIZ_TOKEN
         )
-        print(f"Connected to Zilliz at URI")
+        print("Connected to Zilliz at URI")
 
         # 2. Check if collection already exists
         try:
@@ -124,9 +170,34 @@ def create_zilliz_collection(collection_name: str, dim: int ) -> bool:
             print(f"Error checking collection existence: {e}")
             return False
             
+        # 3. Handle Free Tier Limit (Max 5 Collections)
+        existing_collections = utility.list_collections(using="default")
+        
+        if len(existing_collections) >= 5:
+            print(f"Limit reached ({len(existing_collections)} collections). Finding oldest to drop...")
+            
+            # Instantiate MilvusClient to access collection metadata
+            client = MilvusClient(uri=settings.ZILLIZ_URI, token=settings.ZILLIZ_TOKEN)
+            
+            oldest_collection = None
+            oldest_timestamp = float('inf')
+
+            for col in existing_collections:
+                # describe_collection returns a dictionary containing 'created_timestamp'
+                desc = client.describe_collection(collection_name=col)
+                c_timestamp = desc.get("created_timestamp", 0)
+                
+                if c_timestamp < oldest_timestamp:
+                    oldest_timestamp = c_timestamp
+                    oldest_collection = col
+            
+            if oldest_collection:
+                print(f"Dropping oldest collection: '{oldest_collection}'")
+                utility.drop_collection(oldest_collection, using="default")
+                
         print(f"Creating custom schema for '{collection_name}'...")
         
-        # 3. Define fields based on your Document payload
+        # 4. Define fields based on your Document payload
         fields = [
             # Primary Key & Vector
             FieldSchema(name="pk", dtype=DataType.INT64, is_primary=True, auto_id=True),
@@ -138,9 +209,13 @@ def create_zilliz_collection(collection_name: str, dim: int ) -> bool:
             # Metadata Mapping
             FieldSchema(name="project_id", dtype=DataType.VARCHAR, max_length=255),
             FieldSchema(name="source_title", dtype=DataType.VARCHAR, max_length=65535),
-            FieldSchema(name="source_url", dtype=DataType.VARCHAR, max_length=65535),
             FieldSchema(name="page_number", dtype=DataType.INT64),
             FieldSchema(name="is_vision_extracted", dtype=DataType.BOOL),
+            
+            # Isolation Fields for Q&A and Reference data
+            FieldSchema(name="source_url", dtype=DataType.VARCHAR, max_length=65535),
+            FieldSchema(name="chunk_type", dtype=DataType.VARCHAR, max_length=50), 
+            FieldSchema(name="question_text", dtype=DataType.VARCHAR, max_length=1000, nullable=True),
         ]
         
         schema = CollectionSchema(
@@ -148,7 +223,7 @@ def create_zilliz_collection(collection_name: str, dim: int ) -> bool:
             description="Schema for LangChain Document ingestion"
         )
 
-        # 4. Create collection
+        # 5. Create collection
         try:
             collection = Collection(
                 name=collection_name, 
@@ -161,7 +236,7 @@ def create_zilliz_collection(collection_name: str, dim: int ) -> bool:
             print(f"Failed to create collection '{collection_name}': {str(e)}")
             return False
         
-        # 5. Create Vector Index
+        # 6. Create Vector Index
         vector_index_params = {
             "index_type": "HNSW",
             "metric_type": "COSINE",
@@ -170,13 +245,19 @@ def create_zilliz_collection(collection_name: str, dim: int ) -> bool:
         collection.create_index(field_name="vector", index_params=vector_index_params)
         print("Vector index (HNSW/COSINE) created.")
 
-        # 6. Create Scalar Indexes for faster metadata filtering
+        # 7. Create Scalar Indexes for faster metadata filtering
         collection.create_index(field_name="project_id", index_params={"index_type": "STL_SORT"})
         collection.create_index(field_name="source_url", index_params={"index_type": "STL_SORT"})
-        print("Scalar indexes on 'project_id' and 'source_url' created.")
+        collection.create_index(field_name="chunk_type", index_params={"index_type": "STL_SORT"})
+        print("Scalar indexes on 'project_id', 'source_url', and 'chunk_type' created.")
         
         return True
 
     except Exception as e:
         print(f"Critical error during collection setup: {e}")
         return False
+
+
+
+
+

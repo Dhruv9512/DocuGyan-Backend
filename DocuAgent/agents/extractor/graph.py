@@ -1,5 +1,5 @@
 from langgraph.graph import StateGraph, START, END
-from langgraph.constants import Send
+from langgraph.types import Send
 
 from DocuAgent.utils.extraction import build_DocuExtractor
 from DocuAgent.utils.query_processing import build_QuestionRefiner

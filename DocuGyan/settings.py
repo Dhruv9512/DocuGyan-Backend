@@ -51,6 +51,12 @@ GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
 
+# LLM Backup API Keys
+HUGGINGFACE_API_KEY_BACKUP = os.environ.get("HUGGINGFACE_API_KEY_BACKUP")
+GROQ_API_KEY_BACKUP = os.environ.get("GROQ_API_KEY_BACKUP")
+GOOGLE_API_KEY_BACKUP = os.environ.get("GOOGLE_API_KEY_BACKUP")
+
+
 # --- Vector Database (Zilliz/Milvus) ---
 ZILLIZ_URI = os.environ.get("ZILLIZ_URI")
 ZILLIZ_TOKEN = os.environ.get("ZILLIZ_TOKEN")
@@ -59,6 +65,10 @@ ZILLIZ_ALIAS = os.environ.get("ZILLIZ_ALIAS", "default")
 # -----Internet search API Keys-----
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY")
 
+# Image search api key
+SERPER_API_KEY = os.environ.get("SERPER_API_KEY")
+SERPAPI_API_KEY = os.environ.get("SERPAPI_API_KEY")
+GOOGLE_CX = os.environ.get("GOOGLE_CX")
 
 # Application definition
 INSTALLED_APPS = [

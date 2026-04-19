@@ -4,629 +4,660 @@ from typing import List
 
 # Import the neutral Plumbing
 from core.utils.llm_engine import LLMEngine
-from DocuAgent.schemas.llm_schemas import PlannerOutput, RetrievalGraderOutput, RefinedBatch, DiagramOutput
+from DocuAgent.schemas.llm_schemas import PlannerOutput, RetrievalGraderOutput, RefinedBatch
 from DocuAgent.prompts.DocuExtractor_Prompts import REFINE_QUESTIONS_PROMPT
-from DocuAgent.prompts.academic_prompts import build_drafter_prompt,DIAGRAM_GENERATOR_PROMPT
+from DocuAgent.prompts.academic_prompts import build_drafter_user_prompt, RETRIEVAL_GRADER_PROMPT, QUESTION_PLANNER_PROMPT, DIAGRAM_INJECTOR_PROMPT
 
 logger = logging.getLogger(__name__)
+
 
 class DocuAgentLLMCalls:
     """
     DocuAgent Specialist: Handles specialized workflows for Document Intelligence.
     Uses LLMEngine to fetch clients and implements resilient fallback logic.
-
-    All LLM chains are lazy-initialized once at the class level and reused
-    across all calls — never reconstructed per invocation.
     """
 
-    _planner_chain = None   
-    _vision_chain  = None   
+    # Primary chain
+    _planner_chain = None
+    _vision_chain  = None
     _grader_chain  = None
     _drafter_chain = None
     _refiner_chain = None
     _diagram_chain = None
+
+    # Fallback chain
+    _planner_chain_backup = None
+    _vision_chain_backup  = None
+    _grader_chain_backup  = None
+    _drafter_chain_backup = None
+    _refiner_chain_backup = None
+    _diagram_chain_backup = None
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SHARED UTILITY — HuggingFace structured output fix
+    # ══════════════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def _make_hf_structured(llm, schema_class):
+        """
+        Wraps a HuggingFace LLM's json_mode output into the target Pydantic class.
+
+        WHY THIS IS NEEDED:
+            HuggingFace's with_structured_output(method="json_mode") returns a raw
+            dict, NOT an instance of the schema class. This causes AttributeErrors
+            like 'dict' object has no attribute 'binary_score'.
+
+            This wrapper pipes the raw dict through the Pydantic constructor so
+            callers always receive a properly typed object regardless of provider.
+
+        Usage:
+            fallback_hf = DocuAgentLLMCalls._make_hf_structured(
+                LLMEngine.get_huggingface_chat_client(...), RetrievalGraderOutput
+            )
+        """
+        from langchain_core.runnables import RunnableLambda
+
+        raw_chain = llm.with_structured_output(schema_class, method="json_mode")
+
+        def _parse(result):
+            # If HF returned a dict, parse it into the Pydantic model
+            if isinstance(result, dict):
+                return schema_class(**result)
+            # Already the right type (e.g. Groq returning Pydantic directly)
+            return result
+
+        return raw_chain | RunnableLambda(_parse)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # SHARED UTILITY — Refiner chain builder
+    # ══════════════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def _make_refiner_chain(llm, use_json_mode: bool = False):
+        """
+        Builds a single refiner chain by composing REFINE_QUESTIONS_PROMPT with
+        a structured-output LLM.
+
+        Extracted from _get_refiner_chain to avoid re-defining the helper
+        function on every call and to make it independently testable.
+
+        Args:
+            llm:Any LangChain-compatible chat model.
+            use_json_mode: If True, uses method="json_mode" (needed for some HF models).
+
+        Returns:
+            A Runnable that accepts {"questions": str} and returns RefinedBatch.
+        """
+        structured = (
+            llm.with_structured_output(RefinedBatch, method="json_mode")
+            if use_json_mode
+            else llm.with_structured_output(RefinedBatch)
+        )
+        return REFINE_QUESTIONS_PROMPT | structured
 
     # ══════════════════════════════════════════════════════════════════════
     # WORKFLOW 1: Scan-Based PDF Extraction (Vision)
     # ══════════════════════════════════════════════════════════════════════
 
     @classmethod
-    def _get_vision_chain(cls):
+    def _get_vision_chain(cls, use_backup: bool = False):
         """
-        Lazy-initializes the vision fallback chain once.
+        Lazy-initializes the vision fallback chain once per pool.
+        ALL models must be vision-capable (multimodal) — text-only models cannot
+        process image payloads and must never appear in this chain.
 
-        Model strategy (Groq-first, cross-provider safety):
-        1. PRIMARY: Llama-4-Scout-17B-16E (Groq) - Best for dense academic PDFs.
-        2. FB 1: Llama-4-Maverick-17B-128E (Groq) - Best for complex layouts and tables.
-        3. FB 2: Llama-3.2-90B-Vision-Instruct (HuggingFace) - Cross-provider safety net.
-        4. FB 3: Llama-3.2-11B-Vision-Instruct (HuggingFace) - Lightweight safety net.
+        Model strategy:
+        1. PRIMARY:    llama-4-scout-17b-16e-instruct          (Groq)
+        2. FALLBACK 1: llama-4-maverick-17b-128e-instruct      (Groq)
+        3. FALLBACK 2: Llama-3.2-90B-Vision-Instruct           (HuggingFace)
+        4. FALLBACK 3: Llama-3.2-11B-Vision-Instruct           (HuggingFace)
+        5. FALLBACK 4: Llama-3.2-3B-Vision-Instruct            (HuggingFace)  ← smallest, last resort
+        6. FALLBACK 5: Llama-3.2-1B-Vision-Instruct            (HuggingFace)  ← absolute last resort
         """
-        if cls._vision_chain is not None:
+        if use_backup and cls._vision_chain_backup is not None:
+            return cls._vision_chain_backup
+        if not use_backup and cls._vision_chain is not None:
             return cls._vision_chain
 
         primary    = LLMEngine.get_groq_client(
-            model_name="meta-llama/llama-4-scout-17b-16e-instruct",
-            temperature=0.0,
+            model_name="meta-llama/llama-4-scout-17b-16e-instruct", temperature=0.0, use_backup=use_backup
         )
         fallback_1 = LLMEngine.get_groq_client(
-            model_name="meta-llama/llama-4-maverick-17b-128e-instruct",
-            temperature=0.0,
+            model_name="meta-llama/llama-4-maverick-17b-128e-instruct", temperature=0.0, use_backup=use_backup
         )
         fallback_2 = LLMEngine.get_huggingface_chat_client(
-            model_name="meta-llama/Llama-3.2-90B-Vision-Instruct",
-            temperature=0.0,
+            model_name="meta-llama/Llama-3.2-90B-Vision-Instruct", temperature=0.0, use_backup=use_backup
         )
         fallback_3 = LLMEngine.get_huggingface_chat_client(
-            model_name="meta-llama/Llama-3.2-11B-Vision-Instruct",
-            temperature=0.0,
+            model_name="meta-llama/Llama-3.2-11B-Vision-Instruct", temperature=0.0, use_backup=use_backup
+        )
+        fallback_4 = LLMEngine.get_huggingface_chat_client(
+            model_name="meta-llama/Llama-3.2-3B-Vision-Instruct", temperature=0.0, use_backup=use_backup
+        )
+        fallback_5 = LLMEngine.get_huggingface_chat_client(
+            model_name="meta-llama/Llama-3.2-1B-Vision-Instruct", temperature=0.0, use_backup=use_backup
         )
 
-        cls._vision_chain = primary.with_fallbacks(
-            [fallback_1, fallback_2, fallback_3]
-        )
-        logger.info("[DocuAgentLLMCalls] Vision chain initialized.")
-        return cls._vision_chain
+        chain = primary.with_fallbacks([fallback_1, fallback_2, fallback_3, fallback_4, fallback_5])
+
+        if use_backup:
+            cls._vision_chain_backup = chain
+        else:
+            cls._vision_chain = chain
+
+        return chain
 
     @classmethod
     def VisionExtractorLLM(cls, image_bytes_list: List[bytes]) -> str:
-        """
-        Takes a list of JPEG image bytes and returns formatted Markdown.
-        """
         from DocuAgent.prompts.DocuExtractor_Prompts import PDF_EXTRACTION_PROMPT
 
-        lc_payload = cls._build_langchain_payload(
-            PDF_EXTRACTION_PROMPT, image_bytes_list
-        )
-
+        lc_payload = cls._build_langchain_payload(PDF_EXTRACTION_PROMPT, image_bytes_list)
         try:
             result = cls._get_vision_chain().invoke(lc_payload)
-            logger.info(
-                "[VisionExtractor] Success | Pages: %d", len(image_bytes_list)
-            )
+            logger.info("[VisionExtractor] Success | Pages: %d", len(image_bytes_list))
             return result.content
-
         except Exception as e:
-            logger.error("FATAL: All Vision LLMs failed. Error: %s", e)
-            raise RuntimeError(f"All Vision LLMs failed: {e}") from e
+            try:
+                logger.info("Attempting VisionExtractor backup chain...")
+                backup_chain = cls._get_vision_chain(use_backup=True)
+                result = backup_chain.invoke(lc_payload)
+                logger.info("[VisionExtractor Backup] Success | Pages: %d", len(image_bytes_list))
+                return result.content
+            except Exception as backup_e:
+                logger.error("FATAL: VisionExtractor backup chain also failed. Error: %s", backup_e)
+                raise RuntimeError(f"All Vision LLMs failed: {e}") from e
 
     # ══════════════════════════════════════════════════════════════════════
     # WORKFLOW 2: Question Planner
     # ══════════════════════════════════════════════════════════════════════
 
     @classmethod
-    def _get_planner_chain(cls):
+    def _get_planner_chain(cls, use_backup: bool = False):
         """
-        Lazy-initializes the planner fallback chain once.
+        Lazy-initializes the planner fallback chain once per pool.
+
+        Model strategy (temperature=0.1):
+        1. PRIMARY:    llama-3.3-70b-versatile                 (Groq)
+        2. FALLBACK 1: llama3-groq-70b-8192-tool-use-preview   (Groq)
+        3. FALLBACK 2: qwen-qwq-32b                            (Groq)
+        4. FALLBACK 3: gemma2-9b-it                            (Groq)
+        5. FALLBACK 4: llama-3.1-70b-versatile                 (Groq)
+        6. FALLBACK 5: Qwen/Qwen2.5-72B-Instruct               (HuggingFace)
         """
-        if cls._planner_chain is not None:
+        if use_backup and cls._planner_chain_backup is not None:
+            return cls._planner_chain_backup
+        if not use_backup and cls._planner_chain is not None:
             return cls._planner_chain
 
-        primary    = LLMEngine.get_groq_client(model_name="deepseek-r1-distill-llama-70b", temperature=0.1)
-        fallback_1 = LLMEngine.get_groq_client(model_name="llama-3.3-70b-versatile", temperature=0.1)
-        fallback_2 = LLMEngine.get_groq_client(model_name="llama-3.1-70b-versatile", temperature=0.1)
-        fallback_3 = LLMEngine.get_groq_client(model_name="gemma2-9b-it", temperature=0.1)
-        fallback_hf = LLMEngine.get_huggingface_chat_client(model_name="Qwen/Qwen2.5-72B-Instruct", temperature=0.1)
+        primary    = LLMEngine.get_groq_client(
+            model_name="llama-3.3-70b-versatile", temperature=0.1, use_backup=use_backup
+        )
+        fallback_1 = LLMEngine.get_groq_client(
+            model_name="llama3-groq-70b-8192-tool-use-preview", temperature=0.1, use_backup=use_backup
+        )
+        fallback_2 = LLMEngine.get_groq_client(
+            model_name="qwen-qwq-32b", temperature=0.1, use_backup=use_backup
+        )
+        fallback_3 = LLMEngine.get_groq_client(
+            model_name="gemma2-9b-it", temperature=0.1, use_backup=use_backup
+        )
+        fallback_4 = LLMEngine.get_groq_client(
+            model_name="llama-3.1-70b-versatile", temperature=0.1, use_backup=use_backup
+        )
+        hf_llm = LLMEngine.get_huggingface_chat_client(
+            model_name="Qwen/Qwen2.5-72B-Instruct", temperature=0.1, use_backup=use_backup
+        )
 
-        cls._planner_chain = (
-            primary.with_structured_output(PlannerOutput)
+        chain = (
+            QUESTION_PLANNER_PROMPT | primary.with_structured_output(PlannerOutput)
             .with_fallbacks([
-                fallback_1.with_structured_output(PlannerOutput),
-                fallback_2.with_structured_output(PlannerOutput),
-                fallback_3.with_structured_output(PlannerOutput),
-                fallback_hf.with_structured_output(PlannerOutput, method="json_mode"),  # ← fix
+                QUESTION_PLANNER_PROMPT | fallback_1.with_structured_output(PlannerOutput),
+                QUESTION_PLANNER_PROMPT | fallback_2.with_structured_output(PlannerOutput),
+                QUESTION_PLANNER_PROMPT | fallback_3.with_structured_output(PlannerOutput),
+                QUESTION_PLANNER_PROMPT | fallback_4.with_structured_output(PlannerOutput),
+                QUESTION_PLANNER_PROMPT | cls._make_hf_structured(hf_llm, PlannerOutput),
             ])
         )
 
-        logger.info("[DocuAgentLLMCalls] Planner chain initialized.")
-        return cls._planner_chain
+        if use_backup:
+            cls._planner_chain_backup = chain
+        else:
+            cls._planner_chain = chain
+
+        return chain
 
     @classmethod
-    def call_question_planner(cls, question: str) -> PlannerOutput:
-        """
-        Analyzes a question and produces a full execution plan.
-        """
-        system_prompt = (
-            "You are an elite academic exam planner. "
-            "Analyze the question below and produce a precise execution plan "
-            "covering retrieval strategy, formatting constraints, routing category, "
-            "and a quality assurance checklist. "
-            "Think step-by-step before responding. "
-            "Return ONLY valid JSON matching the requested schema. No preamble."
-        )
-
-        messages = [
-            ("system", system_prompt),
-            ("user", f"Question: {question}"),
-        ]
+    def call_question_planner(cls, question: str, context: str = "") -> PlannerOutput:
 
         try:
-            result: PlannerOutput = cls._get_planner_chain().invoke(messages)
-            logger.debug(
-                "[Planner] category=%s | words=%d",
-                result.question_category,
-                result.target_word_count,
-            )
+            result: PlannerOutput = cls._get_planner_chain().invoke({
+                "question": question,
+                "context": context[:6000],
+            })
+            if isinstance(result, dict):
+                result = PlannerOutput(**result)
+            logger.info("[Planner] Success | Category: %s | Marks: %s", result.question_category, result.allocated_marks)
             return result
 
         except Exception as e:
-            logger.error(
-                "CRITICAL: All planner fallbacks failed. question=%r | error=%s",
-                question[:80], e,
-            )
-            raise  RuntimeError(f"All Question Planner LLMs failed: {e}") from e
-    
-
+            try:
+                logger.info("Attempting Planner backup chain...")
+                backup_chain = cls._get_planner_chain(use_backup=True)
+                result: PlannerOutput = backup_chain.invoke({
+                    "question": question,
+                    "context": context[:6000],
+                })
+                if isinstance(result, dict):
+                    result = PlannerOutput(**result)
+                logger.info("[Planner Backup] Success | Category: %s | Marks: %s", result.question_category, result.allocated_marks)
+                return result
+            except Exception as backup_e:
+                logger.error(
+                    "CRITICAL: Planner backup chain also failed. question=%r | error=%s",
+                    question[:80], backup_e,
+                )
+                raise RuntimeError(f"All Question Planner LLMs failed: {e}") from e
 
     # ══════════════════════════════════════════════════════════════════════
     # WORKFLOW 3: C-RAG Retrieval Grader
     # ══════════════════════════════════════════════════════════════════════
 
     @classmethod
-    def _get_grader_chain(cls):
+    def _get_grader_chain(cls, use_backup: bool = False):
         """
-        Lazy-initializes the C-RAG grader fallback chain once.
+        Lazy-initializes the C-RAG grader fallback chain once per pool.
 
-        Model strategy (temperature=0.0 — fully deterministic judgements):
-        1. PRIMARY:    DeepSeek-R1-Distill-Llama-70B (Groq)
-                    — Chain-of-thought reasoning before verdict.
-                        Best for nuanced "ambiguous" vs "accurate" decisions.
-
-        2. FALLBACK 1: Llama-3.3-70B-Versatile (Groq)
-                    — Strong instruction following, reliable binary output.
-                        Different weights from DeepSeek — avoids systemic failures.
-
-        3. FALLBACK 2: Gemma-2-9B-IT (Groq)
-                    — Highly obedient for strict JSON schema at 9B.
-                        Fast and cheap emergency fallback within Groq.
-
-        4. FALLBACK 3: Qwen2.5-72B-Instruct (HuggingFace)
-                    — Cross-provider safety net if Groq is fully down.
-                        Strong reasoning, reliable structured output.
+        Model strategy (temperature=0.0 — fully deterministic):
+        1. PRIMARY:    llama-3.3-70b-versatile                 (Groq)
+        2. FALLBACK 1: llama3-groq-70b-8192-tool-use-preview   (Groq)
+        3. FALLBACK 2: qwen-qwq-32b                            (Groq)
+        4. FALLBACK 3: gemma2-9b-it                            (Groq)
+        5. FALLBACK 4: llama-3.1-70b-versatile                 (Groq)
+        6. FALLBACK 5: Qwen/Qwen2.5-72B-Instruct               (HuggingFace)
         """
-        if cls._grader_chain is not None:
+        if use_backup and cls._grader_chain_backup is not None:
+            return cls._grader_chain_backup
+        if not use_backup and cls._grader_chain is not None:
             return cls._grader_chain
 
         primary    = LLMEngine.get_groq_client(
-            model_name="deepseek-r1-distill-llama-70b", temperature=0.0
+            model_name="llama-3.3-70b-versatile", temperature=0.0, use_backup=use_backup
         )
         fallback_1 = LLMEngine.get_groq_client(
-            model_name="llama-3.3-70b-versatile", temperature=0.0
+            model_name="llama3-groq-70b-8192-tool-use-preview", temperature=0.0, use_backup=use_backup
         )
         fallback_2 = LLMEngine.get_groq_client(
-            model_name="gemma2-9b-it", temperature=0.0
+            model_name="qwen-qwq-32b", temperature=0.0, use_backup=use_backup
         )
-        fallback_hf = LLMEngine.get_huggingface_chat_client(
-            model_name="Qwen/Qwen2.5-72B-Instruct", temperature=0.0
+        fallback_3 = LLMEngine.get_groq_client(
+            model_name="gemma2-9b-it", temperature=0.0, use_backup=use_backup
+        )
+        fallback_4 = LLMEngine.get_groq_client(
+            model_name="llama-3.1-70b-versatile", temperature=0.0, use_backup=use_backup
+        )
+        hf_llm = LLMEngine.get_huggingface_chat_client(
+            model_name="Qwen/Qwen2.5-72B-Instruct", temperature=0.0, use_backup=use_backup
         )
 
-        cls._grader_chain = (
-            primary.with_structured_output(RetrievalGraderOutput)
+        chain = (
+            RETRIEVAL_GRADER_PROMPT | primary.with_structured_output(RetrievalGraderOutput)
             .with_fallbacks([
-                fallback_1.with_structured_output(RetrievalGraderOutput),
-                fallback_2.with_structured_output(RetrievalGraderOutput),
-                fallback_hf.with_structured_output(RetrievalGraderOutput, method="json_mode"),
+                RETRIEVAL_GRADER_PROMPT | fallback_1.with_structured_output(RetrievalGraderOutput),
+                RETRIEVAL_GRADER_PROMPT | fallback_2.with_structured_output(RetrievalGraderOutput),
+                RETRIEVAL_GRADER_PROMPT | fallback_3.with_structured_output(RetrievalGraderOutput),
+                RETRIEVAL_GRADER_PROMPT | fallback_4.with_structured_output(RetrievalGraderOutput),
+                RETRIEVAL_GRADER_PROMPT | cls._make_hf_structured(hf_llm, RetrievalGraderOutput),
             ])
         )
 
-        logger.info("[DocuAgentLLMCalls] Grader chain initialized.")
-        return cls._grader_chain
+        if use_backup:
+            cls._grader_chain_backup = chain
+        else:
+            cls._grader_chain = chain
 
+        return chain
 
     @classmethod
-    def call_retrieval_grader(
-        cls,
-        question: str,
-        context: str,
-    ) -> RetrievalGraderOutput:
-        """
-        Evaluates whether retrieved documents are sufficient to answer
-        the question. Returns a structured verdict with reasoning.
-
-        Verdict logic the LLM is instructed to follow:
-        - accurate   → context directly and completely answers the question
-        - ambiguous  → context is partially relevant but has gaps
-        - not_found  → context is irrelevant or completely off-topic
-
-        Args:
-            question: The original exam/academic question.
-            context:  Formatted retrieved chunks (numbered, with sources).
-
-        Returns:
-            RetrievalGraderOutput with binary_score + reasoning.
-
-        Raises:
-            Exception if all fallbacks fail — caller should handle gracefully.
-        """
-        system_prompt = (
-            "You are a strict Retrieval Grader for an academic RAG system.\n\n"
-            "Your ONLY job is to evaluate whether the provided context contains "
-            "enough relevant information to answer the question accurately.\n\n"
-            "Scoring rules:\n"
-            "- 'accurate'  → The context directly addresses the question. "
-            "Key concepts, definitions, or facts needed are clearly present.\n"
-            "- 'ambiguous' → The context is partially relevant. Some useful "
-            "information exists but critical details, examples, or depth are missing.\n"
-            "- 'not_found' → The context is irrelevant, off-topic, or contains "
-            "no useful information for this question whatsoever.\n\n"
-            "Be strict. Do NOT mark as 'accurate' if the answer requires "
-            "significant inference or missing facts. "
-            "Return ONLY valid JSON matching the schema. No preamble."
-        )
-
-        messages = [
-            ("system", system_prompt),
-            (
-                "user",
-                f"Question:\n{question}\n\n"
-                f"Retrieved Context:\n{context}\n\n"
-                f"Grade the context strictly using the scoring rules above."
-            ),
-        ]
-
+    def call_retrieval_grader(cls, question: str, context: str) -> RetrievalGraderOutput:
         try:
-            result: RetrievalGraderOutput = cls._get_grader_chain().invoke(messages)
-            logger.debug(
-                "[Grader] score=%s | reasoning=%s",
-                result.binary_score,
-                result.reasoning[:80],
-            )
+            result: RetrievalGraderOutput = cls._get_grader_chain().invoke({
+                "question": question,
+                "context": context[:6000],
+            })
+
+            if isinstance(result, dict):
+                result = RetrievalGraderOutput(**result)
+            logger.info("[Grader] Success | Score: %s", result.binary_score)
             return result
 
         except Exception as e:
-            logger.error(
-                "CRITICAL: All grader fallbacks failed. question=%r | error=%s",
-                question[:80], e,
-            )
-            raise RuntimeError(f"All Retrieval Grader LLMs failed: {e}") from e
-    
+            try:
+                logger.info("Attempting Grader backup chain...")
+                backup_chain = cls._get_grader_chain(use_backup=True)
+                result: RetrievalGraderOutput = backup_chain.invoke({
+                    "question": question,
+                    "context": context[:6000],
+                })
+                if isinstance(result, dict):
+                    result = RetrievalGraderOutput(**result)
+                logger.info("[Grader Backup] Success | Score: %s", result.binary_score)
+                return result
+            except Exception as backup_e:
+                logger.error(
+                    "CRITICAL: Grader backup chain also failed. question=%r | error=%s",
+                    question[:80], backup_e,
+                )
+                raise RuntimeError(f"All Retrieval Grader LLMs failed: {e}") from e
 
     # ══════════════════════════════════════════════════════════════════════
     # WORKFLOW 4: Academic Answer Drafter
     # ══════════════════════════════════════════════════════════════════════
 
     @classmethod
-    def _get_drafter_chain(cls):
+    def _get_drafter_chain(cls, use_backup: bool = False):
         """
-        Lazy-initializes the drafter fallback chain once.
+        Lazy-initializes the drafter fallback chain once per pool.
 
         Model strategy (temperature=0.4 — creative but grounded):
-        1. PRIMARY:    Llama-3.3-70B-Versatile (Groq)
-                    — Best instruction-following + long-form generation on Groq.
-                        Handles all 6 categories cleanly. Fast enough for parallel workers.
-
-        2. FALLBACK 1: DeepSeek-R1-Distill-Llama-70B (Groq)
-                    — Chain-of-thought improves answer structure quality.
-                        Slightly slower but stronger for math and analytical questions.
-
-        3. FALLBACK 2: Llama-3.1-70B-Versatile (Groq)
-                    — Stable same-family safety net if 3.3 hits rate limits.
-
-        4. FALLBACK 3: Qwen2.5-72B-Instruct (HuggingFace)
-                    — Cross-provider safety net if Groq is fully down.
-                        Excellent long-form generation and instruction adherence.
-
-        5. FALLBACK 4: Llama-3.1-8B-Instant (Groq)
-                    — Ultra-fast last resort. Lower quality but never fails.
-                        Ensures the pipeline always produces SOMETHING.
+        1. PRIMARY:    llama-3.3-70b-versatile    (Groq)
+        2. FALLBACK 1: qwen-qwq-32b               (Groq)
+        3. FALLBACK 2: llama-3.1-70b-versatile    (Groq)
+        4. FALLBACK 3: gemma2-9b-it               (Groq)
+        5. FALLBACK 4: Qwen/Qwen2.5-72B-Instruct  (HuggingFace)
+        6. FALLBACK 5: llama-3.1-8b-instant       (Groq)  ← last resort
         """
-        if cls._drafter_chain is not None:
+        if use_backup and cls._drafter_chain_backup is not None:
+            return cls._drafter_chain_backup
+        if not use_backup and cls._drafter_chain is not None:
             return cls._drafter_chain
 
         primary    = LLMEngine.get_groq_client(
-            model_name="llama-3.3-70b-versatile", temperature=0.4
+            model_name="llama-3.3-70b-versatile", temperature=0.4, use_backup=use_backup
         )
         fallback_1 = LLMEngine.get_groq_client(
-            model_name="deepseek-r1-distill-llama-70b", temperature=0.4
+            model_name="qwen-qwq-32b", temperature=0.4, use_backup=use_backup
         )
         fallback_2 = LLMEngine.get_groq_client(
-            model_name="llama-3.1-70b-versatile", temperature=0.4
+            model_name="llama-3.1-70b-versatile", temperature=0.4, use_backup=use_backup
         )
-        fallback_3 = LLMEngine.get_huggingface_chat_client(
-            model_name="Qwen/Qwen2.5-72B-Instruct", temperature=0.4
+        fallback_3 = LLMEngine.get_groq_client(
+            model_name="gemma2-9b-it", temperature=0.4, use_backup=use_backup
         )
-        fallback_4 = LLMEngine.get_groq_client(
-            model_name="llama-3.1-8b-instant", temperature=0.4
+        fallback_4 = LLMEngine.get_huggingface_chat_client(
+            model_name="Qwen/Qwen2.5-72B-Instruct", temperature=0.4, use_backup=use_backup
+        )
+        fallback_5 = LLMEngine.get_groq_client(
+            model_name="llama-3.1-8b-instant", temperature=0.4, use_backup=use_backup
         )
 
-        cls._drafter_chain = primary.with_fallbacks([
+        chain = primary.with_fallbacks([
             fallback_1,
             fallback_2,
             fallback_3,
             fallback_4,
+            fallback_5,
         ])
 
-        logger.info("[DocuAgentLLMCalls] Drafter chain initialized.")
-        return cls._drafter_chain
+        if use_backup:
+            cls._drafter_chain_backup = chain
+        else:
+            cls._drafter_chain = chain
 
+        return chain
 
     @classmethod
     def call_answer_drafter(
         cls,
-        question:       str,
-        context:        str,
-        plan:           PlannerOutput
+        question: str,
+        context_chunks: list[dict],
+        plan: PlannerOutput,
     ) -> str:
-        """
-        Generates the final drafted answer for a single question.
 
-        Args:
-            question:      The original student question.
-            context:       Formatted retrieved context string (numbered chunks).
-            plan:          PlannerOutput — drives the entire prompt construction.
-
-        Returns:
-            Raw drafted answer string (Markdown).
-
-        Raises:
-            RuntimeError if all fallbacks fail.
-        """
-        system_prompt = build_drafter_prompt(plan)
-
-        user_prompt = (
-            f"## Question\n{question}\n\n"
-            f"## Retrieved Context\n{context}"
+        user_prompt = build_drafter_user_prompt(
+            question=question,
+            context_chunks=context_chunks,
+            plan=plan,
         )
 
-        messages = [
-            ("system", system_prompt),
-            ("user",   user_prompt),
-        ]
-
         try:
-            result = cls._get_drafter_chain().invoke(messages)
+            result = cls._get_drafter_chain().invoke(user_prompt)
             draft  = result.content if hasattr(result, "content") else str(result)
-
-            logger.debug(
-                "[Drafter] category=%s | words≈%d",
-                plan.question_category,
-                len(draft.split()),
+            logger.info(
+                "[Drafter] Success | Category: %s | Words≈%d",
+                plan.question_category, len(draft.split())
             )
             return draft
 
         except Exception as e:
-            logger.error(
-                "CRITICAL: All drafter fallbacks failed. question=%r | error=%s",
-                question[:80], e,
-            )
-            raise RuntimeError(f"All Drafter LLMs failed: {e}") from e
-        
+            try:
+                logger.info("Attempting Drafter backup chain...")
+                backup_chain = cls._get_drafter_chain(use_backup=True)
+                result = backup_chain.invoke(user_prompt)
+                draft  = result.content if hasattr(result, "content") else str(result)
+                logger.info(
+                    "[Drafter Backup] Success | Category: %s | Words≈%d",
+                    plan.question_category, len(draft.split())
+                )
+                return draft
+            except Exception as backup_e:
+                logger.error(
+                    "CRITICAL: Both drafter chains failed. question=%r | error=%s",
+                    question[:80], backup_e,
+                )
+                raise RuntimeError(f"All Drafter LLMs failed: {e}") from e
+
     # ══════════════════════════════════════════════════════════════════════
     # WORKFLOW 5: Question Refiner
     # ══════════════════════════════════════════════════════════════════════
 
     @classmethod
-    def _get_refiner_chain(cls):
+    def _get_refiner_chain(cls, use_backup: bool = False):
         """
-        Lazy-initializes the question refiner fallback chain once.
+        Lazy-initializes the question refiner fallback chain once per pool.
 
-        Task profile: structured extraction + grammar correction on raw text.
-        Needs strong instruction-following and reliable JSON output.
-        Temperature = 0.0 — purely deterministic cleanup, no creativity needed.
-
-        Model strategy:
-        1. PRIMARY:    Llama-3.3-70B-Versatile (Groq)
-                    — Best instruction-following on Groq for structured extraction.
-                    Handles multi-part MCQ stripping and fill-in-the-blank
-                    conversion cleanly. Fast enough for batched parallel workers.
-
-        2. FALLBACK 1: DeepSeek-R1-Distill-Llama-70B (Groq)
-                    — Chain-of-thought pre-reasoning improves handling of
-                    ambiguous or malformed question blocks before output.
-                    Different weight family from primary — avoids correlated failures.
-
-        3. FALLBACK 2: Gemma-2-9B-IT (Groq)
-                    — Highly schema-obedient at 9B. Fast emergency fallback
-                    within Groq if the 70B models hit rate limits.
-
-        4. FALLBACK 3: Qwen2.5-72B-Instruct (HuggingFace)
-                    — Cross-provider safety net if Groq is fully down.
-                    Strong multilingual instruction-following; handles
-                    mixed-language exam papers well.
-
-        5. FALLBACK 4: Llama-3.1-70B-Versatile (Groq)
-                    — Same-family safety net for Llama-3.3. Slightly lower
-                    quality but virtually never fails while Groq is up.
+        Model strategy (temperature=0.0 — deterministic cleanup):
+        1. PRIMARY:    llama-3.3-70b-versatile    (Groq)
+        2. FALLBACK 1: qwen-qwq-32b               (Groq)
+        3. FALLBACK 2: gemma2-9b-it               (Groq)
+        4. FALLBACK 3: llama-3.1-70b-versatile    (Groq)
+        5. FALLBACK 4: Qwen/Qwen2.5-72B-Instruct  (HuggingFace)
+        6. FALLBACK 5: llama-3.1-8b-instant       (Groq)  ← last resort
         """
-        if cls._refiner_chain is not None:
+        if use_backup and cls._refiner_chain_backup is not None:
+            return cls._refiner_chain_backup
+        if not use_backup and cls._refiner_chain is not None:
             return cls._refiner_chain
 
-        primary = LLMEngine.get_groq_client(model_name="llama-3.3-70b-versatile", temperature=0.0)
-        fallback_1 = LLMEngine.get_groq_client(model_name="deepseek-r1-distill-llama-70b", temperature=0.0)
-        fallback_2 = LLMEngine.get_groq_client(model_name="gemma2-9b-it", temperature=0.0)
-        fallback_3 = LLMEngine.get_huggingface_chat_client(model_name="Qwen/Qwen2.5-72B-Instruct", temperature=0.0)
-        fallback_4 = LLMEngine.get_groq_client(model_name="llama-3.1-70b-versatile", temperature=0.0)
+        primary    = LLMEngine.get_groq_client(
+            model_name="llama-3.3-70b-versatile", temperature=0.0, use_backup=use_backup
+        )
+        fallback_1 = LLMEngine.get_groq_client(
+            model_name="qwen-qwq-32b", temperature=0.0, use_backup=use_backup
+        )
+        fallback_2 = LLMEngine.get_groq_client(
+            model_name="gemma2-9b-it", temperature=0.0, use_backup=use_backup
+        )
+        fallback_3 = LLMEngine.get_groq_client(
+            model_name="llama-3.1-70b-versatile", temperature=0.0, use_backup=use_backup
+        )
+        hf_llm = LLMEngine.get_huggingface_chat_client(
+            model_name="Qwen/Qwen2.5-72B-Instruct", temperature=0.0, use_backup=use_backup
+        )
+        fallback_5 = LLMEngine.get_groq_client(
+            model_name="llama-3.1-8b-instant", temperature=0.0, use_backup=use_backup
+        )
 
-        def make_refiner_chain(llm, use_json_mode=False):
-            structured = (
-                llm.with_structured_output(RefinedBatch, method="json_mode")
-                if use_json_mode
-                else llm.with_structured_output(RefinedBatch)
-            )
-            return REFINE_QUESTIONS_PROMPT | structured
-
-        cls._refiner_chain = make_refiner_chain(primary).with_fallbacks([
-            make_refiner_chain(fallback_1),
-            make_refiner_chain(fallback_2),
-            make_refiner_chain(fallback_3, use_json_mode=True), 
-            make_refiner_chain(fallback_4),
+        chain = cls._make_refiner_chain(primary).with_fallbacks([
+            cls._make_refiner_chain(fallback_1),
+            cls._make_refiner_chain(fallback_2),
+            cls._make_refiner_chain(fallback_3),
+            REFINE_QUESTIONS_PROMPT | cls._make_hf_structured(hf_llm, RefinedBatch),
+            cls._make_refiner_chain(fallback_5),
         ])
 
-        logger.info("[DocuAgentLLMCalls] Refiner chain initialized.")
-        return cls._refiner_chain
+        if use_backup:
+            cls._refiner_chain_backup = chain
+        else:
+            cls._refiner_chain = chain
 
-
+        return chain
 
     @classmethod
     def call_refine_questions(cls, batch_text: str) -> RefinedBatch:
-        """
-        Cleans and refines a batch of raw question blocks into structured output.
-
-        The prompt handles all question types (MCQ stripping, fill-in-the-blank
-        conversion, multi-part splitting, True/False, Assertion-Reason, etc.)
-        as defined in REFINE_QUESTIONS_PROMPT.
-
-        Args:
-            batch_text: Raw question blocks joined by double newlines,
-            each prefixed with '- ' (as formatted by _process_batch).
-
-        Returns:
-            RefinedBatch containing a list of RefinedQuestion objects.
-
-        Raises:
-            RuntimeError if all fallbacks are exhausted.
-        """
         try:
-            
             result: RefinedBatch = cls._get_refiner_chain().invoke(
                 {"questions": batch_text}
             )
+            if isinstance(result, dict):
+                result = RefinedBatch(**result)
 
             if not result or not result.questions:
                 logger.warning("[Refiner] LLM returned an empty RefinedBatch.")
                 raise ValueError("LLM returned an empty RefinedBatch.")
 
-            logger.debug(
-                "[Refiner] Successfully refined %d questions.", len(result.questions)
-            )
+            logger.info("[Refiner] Successfully refined %d questions.", len(result.questions))
             return result
 
         except Exception as e:
-            logger.error(
-                "CRITICAL: All refiner fallbacks failed. batch_preview=%r | error=%s",
-                batch_text[:80], e,
-            )
-            raise RuntimeError(f"All Refiner LLMs failed: {e}") from e
-    
+            try:
+                logger.info("Attempting Refiner backup chain...")
+                backup_chain = cls._get_refiner_chain(use_backup=True)
+                result: RefinedBatch = backup_chain.invoke({"questions": batch_text})
+                if isinstance(result, dict):
+                    result = RefinedBatch(**result)
+                if not result or not result.questions:
+                    logger.warning("[Refiner Backup] LLM returned an empty RefinedBatch.")
+                    raise ValueError("LLM returned an empty RefinedBatch.")
+                logger.info("[Refiner Backup] Successfully refined %d questions.", len(result.questions))
+                return result
+            except Exception as backup_e:
+                logger.error(
+                    "CRITICAL: Refiner backup chain also failed. batch_preview=%r | error=%s",
+                    batch_text[:80], backup_e,
+                )
+                raise RuntimeError(f"All Refiner LLMs failed: {e}") from e
+
     # ══════════════════════════════════════════════════════════════════════
-    # WORKFLOW 6: Academic Diagram Generator
+    # WORKFLOW 6: Diagram Query Generator
     # ══════════════════════════════════════════════════════════════════════
 
     @classmethod
-    def _get_diagram_chain(cls):
+    def _get_diagram_chain(cls, use_backup: bool = False):
         """
-        Lazy-initializes the diagram generator fallback chain once.
+        Lazy-initializes the diagram injector fallback chain once per pool.
 
-        Task profile: structured diagram code generation from a concept + hint.
-        Needs strong code generation and reliable JSON schema output.
-        Temperature = 0.1 — nearly deterministic, tiny variance for layout variety.
-
-        Model strategy:
-        1. PRIMARY:    Llama-3.3-70B-Versatile (Groq)
-                    — Best instruction-following + code gen on Groq.
-                    Handles Mermaid syntax reliably. Fast enough for
-                    parallel placeholder resolution.
-
-        2. FALLBACK 1: DeepSeek-R1-Distill-Llama-70B (Groq)
-                    — Chain-of-thought pre-reasoning produces cleaner
-                    diagram structure for complex multi-entity concepts.
-                    Different weight family — avoids correlated failures.
-
-        3. FALLBACK 2: Gemma-2-9B-IT (Groq)
-                    — Highly schema-obedient at 9B. Fast emergency fallback
-                    within Groq if 70B slots are rate-limited.
-
-        4. FALLBACK 3: Qwen2.5-72B-Instruct (HuggingFace)
-                    — Cross-provider safety net if Groq is fully down.
-                    Strong structured code generation, reliable JSON output.
-
-        5. FALLBACK 4: Llama-3.1-70B-Versatile (Groq)
-                    — Same-family safety net. Lower quality ceiling than 3.3
-                    but virtually always available.
+        Model strategy (temperature=0.2 — mostly deterministic, slight flexibility):
+        1. PRIMARY:    llama-3.3-70b-versatile    (Groq)
+        2. FALLBACK 1: qwen-qwq-32b               (Groq)
+        3. FALLBACK 2: llama-3.1-70b-versatile    (Groq)
+        4. FALLBACK 3: gemma2-9b-it               (Groq)
+        5. FALLBACK 4: Qwen/Qwen2.5-72B-Instruct  (HuggingFace)
+        6. FALLBACK 5: llama-3.1-8b-instant       (Groq)  ← last resort
         """
-        if cls._diagram_chain is not None:
+        if use_backup and cls._diagram_chain_backup is not None:
+            return cls._diagram_chain_backup
+        if not use_backup and cls._diagram_chain is not None:
             return cls._diagram_chain
 
-        primary = LLMEngine.get_groq_client(model_name="llama-3.3-70b-versatile", temperature=0.1)
-        fallback_1 = LLMEngine.get_groq_client(model_name="deepseek-r1-distill-llama-70b", temperature=0.1)
-        fallback_2 = LLMEngine.get_groq_client(model_name="gemma2-9b-it", temperature=0.1)
-        fallback_3 = LLMEngine.get_huggingface_chat_client(model_name="Qwen/Qwen2.5-72B-Instruct", temperature=0.1)
-        fallback_4 = LLMEngine.get_groq_client(model_name="llama-3.1-70b-versatile", temperature=0.1)
+        primary    = LLMEngine.get_groq_client(
+            model_name="llama-3.3-70b-versatile", temperature=0.2, use_backup=use_backup
+        )
+        fallback_1 = LLMEngine.get_groq_client(
+            model_name="qwen-qwq-32b", temperature=0.2, use_backup=use_backup
+        )
+        fallback_2 = LLMEngine.get_groq_client(
+            model_name="llama-3.1-70b-versatile", temperature=0.2, use_backup=use_backup
+        )
+        fallback_3 = LLMEngine.get_groq_client(
+            model_name="gemma2-9b-it", temperature=0.2, use_backup=use_backup
+        )
+        fallback_4 = LLMEngine.get_huggingface_chat_client(
+            model_name="Qwen/Qwen2.5-72B-Instruct", temperature=0.2, use_backup=use_backup
+        )
+        fallback_5 = LLMEngine.get_groq_client(
+            model_name="llama-3.1-8b-instant", temperature=0.2, use_backup=use_backup
+        )
 
-        def make_diagram_chain(llm, use_json_mode=False):
-            structured = (
-                llm.with_structured_output(DiagramOutput, method="json_mode")
-                if use_json_mode
-                else llm.with_structured_output(DiagramOutput)
-            )
-            return DIAGRAM_GENERATOR_PROMPT | structured 
-
-        cls._diagram_chain = make_diagram_chain(primary).with_fallbacks([
-            make_diagram_chain(fallback_1),
-            make_diagram_chain(fallback_2),
-            make_diagram_chain(fallback_3, use_json_mode=True),  
-            make_diagram_chain(fallback_4),
+        # Compose prompt into chain so callers invoke with {"question": ..., "draft": ...}
+        chain = DIAGRAM_INJECTOR_PROMPT | primary.with_fallbacks([
+            fallback_1,
+            fallback_2,
+            fallback_3,
+            fallback_4,
+            fallback_5,
         ])
 
-        logger.info("[DocuAgentLLMCalls] Diagram chain initialized.")
-        return cls._diagram_chain
+        if use_backup:
+            cls._diagram_chain_backup = chain
+        else:
+            cls._diagram_chain = chain
 
+        return chain
 
     @classmethod
-    def call_diagram_generator(
-        cls,
-        concept: str,
-        hint: str,
-        question_category: str,
-    ) -> DiagramOutput:
+    def call_diagram_query_generator(cls, question: str, draft: str) -> str | None:
         """
-        Generates a Mermaid diagram for a given academic concept.
+        Reads the draft and injects [DiagramQuery: ...] + {diagram_N} placeholders
+        at contextually appropriate positions.
 
-        Args:
-            concept:The core entity/concept to diagram
-                    (e.g. "TCP three-way handshake").
-            hint:The drafter's one-sentence description of what
-                this specific diagram should illustrate
-                (extracted from the sentence just before the placeholder).
-            question_category: From PlannerOutput — drives diagram style choice
-                            (flowchart for process questions, classDiagram for
-                            OOP, sequenceDiagram for protocol questions, etc.)
-
-        Returns:
-            DiagramOutput with diagram_type, diagram_code, caption, fallback_text.
-
-        Raises:
-            RuntimeError if all fallbacks are exhausted.
+        Retry strategy:
+        - Primary chain  : primary + 5 fallbacks via LangChain .with_fallbacks()
+        - Backup chain   : separate model pool via use_backup=True
+        - Total failure  : returns None — caller keeps the original draft
         """
-        
+        inputs = {"question": question, "draft": draft}
+
         try:
-            
-            result: DiagramOutput = cls._get_diagram_chain().invoke(
-                {
-                    "concept": concept,
-                    "hint": hint,
-                    "question_category": question_category,
-                }
+            result = cls._get_diagram_chain().invoke(inputs)
+            output = result.content if hasattr(result, "content") else str(result)
+
+            if not output or not output.strip():
+                raise ValueError("Diagram chain returned empty output.")
+
+            if "{diagram_1}" not in output:
+                raise ValueError("Diagram chain did not inject any placeholder.")
+
+            logger.info(
+                "[DiagramQueryGenerator] Success | Placeholders injected | Words≈%d",
+                len(output.split()),
             )
-            logger.debug(
-                "[DiagramGen] concept=%r | type=%s | nodes≈%d",
-                concept[:60],
-                result.diagram_type,
-                result.diagram_code.count("\n"),
-            )
-            return result
+            return output.strip()
 
         except Exception as e:
-            logger.error(
-                "CRITICAL: All diagram generator fallbacks failed. concept=%r | error=%s",
-                concept[:60], e,
-            )
-            raise RuntimeError(f"All Diagram Generator LLMs failed: {e}") from e
+            try:
+                logger.info("Attempting DiagramQueryGenerator backup chain...")
+                backup_chain = cls._get_diagram_chain(use_backup=True)
+                result = backup_chain.invoke(inputs)
+                output = result.content if hasattr(result, "content") else str(result)
+
+                if not output or not output.strip():
+                    raise ValueError("Diagram backup chain returned empty output.")
+
+                if "{diagram_1}" not in output:
+                    raise ValueError("Diagram backup chain did not inject any placeholder.")
+
+                logger.info(
+                    "[DiagramQueryGenerator Backup] Success | Words≈%d",
+                    len(output.split()),
+                )
+                return output.strip()
+
+            except Exception as backup_e:
+                logger.error(
+                    "CRITICAL: Both diagram chains failed. question=%r | error=%s",
+                    question[:80], backup_e,
+                )
+                return None
 
     # ══════════════════════════════════════════════════════════════════════
-    # SHARED UTILITY
+    # SHARED UTILITY — Vision payload builder
     # ══════════════════════════════════════════════════════════════════════
 
     @classmethod
-    def _build_langchain_payload(
-        cls, prompt_text: str, image_bytes_list: List[bytes]
-    ) -> list:
-        """
-        Builds a LangChain HumanMessage with text + multiple Base64 images.
-        """
+    def _build_langchain_payload(cls, prompt_text: str, image_bytes_list: List[bytes]) -> list:
         from langchain_core.messages import HumanMessage
 
         content_blocks = [{"type": "text", "text": prompt_text}]
-
         for img_bytes in image_bytes_list:
             b64_image = base64.b64encode(img_bytes).decode("utf-8")
             content_blocks.append({
@@ -636,5 +667,4 @@ class DocuAgentLLMCalls:
                     "detail": "high",
                 },
             })
-
         return [HumanMessage(content=content_blocks)]

@@ -30,10 +30,11 @@ class VectorDBIngestor:
     converting them into standard LangChain Documents with rich metadata, and 
     inserting them into the Vector DB.
     """
-    def __init__(self, project_id: str, extracted_doc_urls: List[str]):
+    def __init__(self, project_id: str, extracted_doc_urls: List[str], is_final_answer: bool = False):
         self.project_id = project_id
         self.collection_name = get_collection_name(project_id)
         self.extracted_doc_urls = extracted_doc_urls
+        self.is_final_answer = is_final_answer
         self.session = get_request_session_with_blob_auth()
         self.embedding_model = LLMEngine.get_huggingface_embedding_client()
         self.vectorstore = None
@@ -91,7 +92,11 @@ class VectorDBIngestor:
                 content = response.text
 
                 # Parse the markdown into standard Documents
-                parsed_pages = self._parse_markdown_to_documents(content, url)
+                if self.is_final_answer:
+                    parsed_pages = self._parse_qna_to_documents(content, url)
+                else:
+                    parsed_pages = self._parse_markdown_to_documents(content, url)
+
                 all_processed_docs.extend(parsed_pages)
 
             except requests.exceptions.RequestException as e:
@@ -168,6 +173,57 @@ class VectorDBIngestor:
                     "source_url": source_url,
                     "page_number": page_num,
                     "is_vision_extracted": is_vision_extracted,
+                    "chunk_type": "reference",
+                    "question_text": ""
+                }
+            )
+            documents.append(doc)
+            
+        return documents
+    
+    def _parse_qna_to_documents(self, raw_md: str, source_url: str) -> List[Document]:
+        """
+        Intelligently splits the aggregated Q&A Markdown format into separate Documents.
+        Uses the '---' separator defined in format_final to safely split blocks, 
+        preventing accidental splits on internal LLM sub-headers.
+        """
+        documents = []
+        
+        # 1. Strip the global title added by the aggregate_and_upload node
+        clean_md = re.sub(r'(?i)^# Academic Q&A Final Document\s*', '', raw_md).strip()
+        
+        # 2. Split strictly by the '---' that format_final appends to the end of every answer
+        raw_blocks = re.split(r'(?m)^---\s*$', clean_md)
+        
+        for block in raw_blocks:
+            block = block.strip()
+            
+            # Skip empty blocks (often occurs at the very end after the last '---')
+            if not block:
+                continue
+                
+            # 3. Parse out the header to get the metadata
+            # At this point, the block should perfectly start with "### {original_question}"
+            lines = block.split('\n', 1)
+            raw_header = lines[0].replace('### ', '').strip() if lines else "Unknown"
+            
+            # Match "1. What is...", "Q2: Define...", etc.
+            match = re.match(r'^(?:Q(?:uestion)?)?\s*(\d+)?(?:[.:)])?\s*(.*)$', raw_header, re.IGNORECASE)
+            
+            q_text = match.group(2).strip() if match and match.group(2) else raw_header
+
+            # 4. Construct the Document
+            doc = Document(
+                page_content=block,
+                metadata={
+                    "project_id": self.project_id,
+                    "collection_name": self.collection_name,
+                    "source_title": "Generated Q&A",
+                    "source_url": source_url,
+                    "page_number": 0,
+                    "is_vision_extracted": False,
+                    "chunk_type": "qna",
+                    "question_text": q_text if q_text else "Unknown Question", 
                 }
             )
             documents.append(doc)
@@ -261,9 +317,9 @@ class VectorDBIngestor:
 # =========================================================
 # Builder Function
 # =========================================================
-def build_vector_db_ingestor(project_id: str, extracted_doc_urls: list) -> bool:
+def build_vector_db_ingestor(project_id: str, extracted_doc_urls: list[str] = None, is_final_answer: bool = False) -> bool:
     """
     Factory function to initialize and execute the VectorDBIngestor.
     """
-    ingestor = VectorDBIngestor(project_id=project_id, extracted_doc_urls=extracted_doc_urls)
+    ingestor = VectorDBIngestor(project_id=project_id, extracted_doc_urls=extracted_doc_urls, is_final_answer=is_final_answer)
     return ingestor.run()

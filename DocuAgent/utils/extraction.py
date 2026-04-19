@@ -457,7 +457,7 @@ class DocuExtractor:
                 return ""
                 
             # 4. Generate a unique path for the blob storage
-            blob_path = f"{self.project_id}/extracted_media/img_{xref}.{ext}"
+            blob_path = f"{get_collection_name(self.project_id)}/temp/img_{xref}.{ext}"
             
             # 5. Upload the raw bytes directly to Vercel
             image_url = upload_to_vercel_blob(

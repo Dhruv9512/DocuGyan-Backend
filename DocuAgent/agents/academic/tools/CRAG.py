@@ -120,8 +120,21 @@ class CorrectiveRetriever:
         elif grade.binary_score == "ambiguous":
             logger.warning("[CorrectiveRetriever] Grade=ambiguous — augmenting with web docs.")
             web_docs = self._web_search_as_documents(primary_query)
+
+            half_k = top_k // 2
+            internal_selected = all_docs[:half_k]
+
+            remaining_needed = top_k - len(internal_selected)
+            web_selected = web_docs[:remaining_needed]
+
+            if len(web_selected) < remaining_needed:
+                extra_needed = remaining_needed - len(web_selected)
+                internal_selected.extend(all_docs[half_k:half_k + extra_needed])
+
+            combined_docs = internal_selected + web_selected
+
             return {
-                "retrieved_docs": all_docs + web_docs,
+                "retrieved_docs": combined_docs,
                 "grader_assessment": grade
             }
 
@@ -135,17 +148,17 @@ class CorrectiveRetriever:
     def _web_search_as_documents(self, query: str) -> list[Document]:
         try:
             from langchain_community.tools.tavily_search import TavilySearchResults
-            
+
             raw_results: list[dict] = TavilySearchResults(k=10, api_key=getattr(settings, 'TAVILY_API_KEY', None)).run(query)
             return [
                 Document(
                     page_content=r.get("content", ""),
-                    metadata={"source": r.get("url", "web"), "title": r.get("title", ""), "type": "web"}
+                    metadata={"source_url": r.get("url", "web"), "title": r.get("title", ""), "type": "web"}
                 ) for r in raw_results if r.get("content")
             ]
         except Exception as exc:
             logger.error("[CorrectiveRetriever] Web search failed: %s", exc)
-            return [Document(page_content="Web search unavailable.", metadata={"source": "fallback", "type": "error"})]
+            return [Document(page_content="Web search unavailable.", metadata={"source_url": "fallback", "type": "error"})]
 
 # ================================================================
 # Builder Function
