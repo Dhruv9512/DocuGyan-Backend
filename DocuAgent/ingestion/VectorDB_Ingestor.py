@@ -14,6 +14,7 @@ from langchain_community.vectorstores import Milvus
 from DocuAgent.utils.utility import get_collection_name, create_zilliz_collection, get_request_session_with_blob_auth
 from core.utils.llm_engine import LLMEngine
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from DocuAgent.websocket.notifier import Notifier
 
 from DocuAgent.models import DocuProcess
 
@@ -35,6 +36,8 @@ class VectorDBIngestor:
         self.collection_name = get_collection_name(project_id)
         self.extracted_doc_urls = extracted_doc_urls
         self.is_final_answer = is_final_answer
+        self.socket_node = "academic" if is_final_answer else "vector_rag_ingest"
+        self.notifier = Notifier(project_id)
         self.session = get_request_session_with_blob_auth()
         self.embedding_model = LLMEngine.get_huggingface_embedding_client()
         self.vectorstore = None
@@ -43,18 +46,34 @@ class VectorDBIngestor:
     def run(self) -> bool:
         try:
             logger.info(f"Starting Vector Ingestion for project {self.project_id}. Target Collection: {self.collection_name}")
+            self.notifier.send_message(
+                f"Vector Ingestor: Starting ingestion for {len(self.extracted_doc_urls or [])} document source(s).",
+                current_node=self.socket_node,
+                status="processing",
+            )
 
             # 1. Download and parse into LangChain Documents
             documents = self._process_documents(self.extracted_doc_urls)
             if not documents:
                 logger.warning("No valid text found in the provided documents to ingest.")
                 raise ValueError("No valid text found in the provided documents to ingest.")
+            self.notifier.send_message(
+                f"Vector Ingestor: Parsed {len(documents)} document page(s).",
+                current_node=self.socket_node,
+                status="processing",
+            )
 
             # 2. Chunk the documents
             chunked_documents = self._document_chunking(documents)
             if not chunked_documents:
                 logger.warning("Document chunking resulted in no valid chunks to ingest.")
                 raise ValueError("Document chunking resulted in no valid chunks to ingest.")
+            total_batches = (len(chunked_documents) + BATCH_SIZE - 1) // BATCH_SIZE
+            self.notifier.send_message(
+                f"Vector Ingestor: Generated {len(chunked_documents)} chunk(s) across {total_batches} batch(es).",
+                current_node=self.socket_node,
+                status="processing",
+            )
 
             # 3. Insert into Zilliz vector DB
             if not self._insert_into_vector_db(chunked_documents):
@@ -71,9 +90,18 @@ class VectorDBIngestor:
                 raise ValueError(f"DocuProcess not found for the given project_id: {self.project_id}")
 
             logger.info(f"Successfully processed {len(chunked_documents)} page chunks.")
+            self.notifier.send_message(
+                "Vector Ingestor: Ingestion complete.",
+                current_node=self.socket_node,
+                status="completed",
+            )
             return True
 
         except Exception as e:
+            self.notifier.send_error(
+                f"Vector Ingestor: Ingestion failed: {str(e)}",
+                current_node=self.socket_node,
+            )
             logger.error(f"FATAL: VectorDBIngestor failed: {str(e)}", exc_info=True)
             raise RuntimeError(f"VectorDBIngestor failed: {str(e)}") from e
 
@@ -84,7 +112,7 @@ class VectorDBIngestor:
         """
         all_processed_docs = []
         
-        for url in doc_urls:
+        for idx, url in enumerate(doc_urls, start=1):
             try:
                 logger.info(f"Downloading extracted document: {url}")
                 response = self.session.get(url, timeout=30)
@@ -98,10 +126,19 @@ class VectorDBIngestor:
                     parsed_pages = self._parse_markdown_to_documents(content, url)
 
                 all_processed_docs.extend(parsed_pages)
+                self.notifier.send_message(
+                    f"Vector Ingestor: Processed source {idx}/{len(doc_urls)}.",
+                    current_node=self.socket_node,
+                    status="processing",
+                )
 
             except requests.exceptions.RequestException as e:
                 # Log the error but continue processing other URLs
                 logger.error(f"Failed to download {url}. Skipping. Error: {e}")
+                self.notifier.send_error(
+                    f"Vector Ingestor: Failed to download source {idx}/{len(doc_urls)}. Skipping.",
+                    current_node=self.socket_node,
+                )
                 continue
         
         if not all_processed_docs:
@@ -257,27 +294,55 @@ class VectorDBIngestor:
                 raise ValueError("No chunked documents to insert into the vector database.")
 
             logger.info("Connecting to Zilliz....")
+            self.notifier.send_message(
+                "Vector Ingestor: Connecting to vector database...",
+                current_node=self.socket_node,
+                status="processing",
+            )
             
             if not self.is_collection:
                 self.is_collection=create_zilliz_collection(
                     collection_name=self.collection_name,
-                    dim=384
+                    dim=384,
+                    project_id = self.project_id
                 )
                 col = Collection(self.collection_name)
                 col.load()
                 connections.disconnect("default")
                 logger.info("Disconnected pymilvus default alias before LangChain reconnect.")
+                self.notifier.send_message(
+                    "Vector Ingestor: Collection ready for inserts.",
+                    current_node=self.socket_node,
+                    status="processing",
+                )
 
+            total_batches = (len(chunked_documents) + BATCH_SIZE - 1) // BATCH_SIZE
+            batch_number = 0
             for i in range(0, len(chunked_documents), BATCH_SIZE):
                 docs = chunked_documents[i:i + BATCH_SIZE]
+                batch_number += 1
+                self.notifier.send_message(
+                    f"Vector Ingestor: Inserting batch {batch_number}/{total_batches} ({len(docs)} chunk(s)).",
+                    current_node=self.socket_node,
+                    status="processing",
+                )
                 success = self._insert_batch_to_zilliz(docs)
                 if not success:
                     logger.error(f"Failed on batch starting at index {i}")
                     raise ValueError(f"Failed to insert batch starting at index {i}")
 
+            self.notifier.send_message(
+                "Vector Ingestor: All batches inserted.",
+                current_node=self.socket_node,
+                status="completed",
+            )
             return True  
 
         except Exception as e:
+            self.notifier.send_error(
+                f"Vector Ingestor: Vector DB insertion failed: {e}",
+                current_node=self.socket_node,
+            )
             logger.error(f"Error: {e}")
             raise ValueError(f"Error during vector DB insertion: {e}") from e
 

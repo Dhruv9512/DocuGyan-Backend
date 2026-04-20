@@ -947,7 +947,7 @@ QUESTION_PLANNER_SYSTEM_PROMPT = """
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     Return ONLY valid JSON matching this exact schema — no preamble, no markdown fences:
 
-    {
+    {{
     "question"          : <string>  — copy the original question verbatim,
     "question_category" : <string>  — exactly one of: academic | coding | math | factual | analytical | creative | default,
     "allocated_marks"   : <integer> — value between 1 and 20, never null, never a string,
@@ -955,7 +955,7 @@ QUESTION_PLANNER_SYSTEM_PROMPT = """
     "requires_diagram"  : <boolean> — true or false,
     "is_comparison"     : <boolean> — true or false,
     "core_entities"     : <list>    — non-empty list of short noun-phrase strings
-    }
+    }}
 
     CROSS-CHECK BEFORE RETURNING:
     - requires_code=true  → question_category MUST be "coding".
@@ -987,7 +987,7 @@ QUESTION_PLANNER_PROMPT = ChatPromptTemplate.from_messages([
 
 
 # ===========================================Diagram queary prompt: version 1=======================================
-DIAGRAM_INJECTOR_PROMPT = """
+DIAGRAM_INJECTOR_USER_PROMPT = """
     ## Original Question
     {question}
 
@@ -1003,7 +1003,7 @@ DIAGRAM_INJECTOR_PROMPT = """
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     1. Decide the number of diagrams based on content:
        - Simple / single-concept answer        → 1 diagram
-       - Multi-step process or layered concepts → 2–3 diagrams
+       - Multi-step process or layered concepts → 2-3 diagrams
 
     2. Place each diagram ONLY where it genuinely aids understanding:
        - GOOD: a flowchart right after explaining a multi-step process
@@ -1013,9 +1013,9 @@ DIAGRAM_INJECTOR_PROMPT = """
 
     3. For each diagram, insert EXACTLY TWO lines on their own line, in this order:
        [Query: <specific descriptive search query>]
-       {diagram_N}
+       {{diagram_N}}
 
-       Where N starts at 1 and increments: {diagram_1}, {diagram_2}, {diagram_3}
+       Where N starts at 1 and increments: {{diagram_1}}, {{diagram_2}}, {{diagram_3}}, etc.
 
     4. Query accuracy rules:
        - The query MUST describe the SPECIFIC concept in the paragraph directly above it.
@@ -1028,7 +1028,7 @@ DIAGRAM_INJECTOR_PROMPT = """
        Only place a diagram where you can write a precise, concept-specific query.
 
     6. NEVER place all diagram placeholders at the end of the answer.
-    7. NEVER reuse the same placeholder ({diagram_1} can only appear once).
+    7. NEVER reuse the same placeholder ({{diagram_1}} can only appear once).
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     EXAMPLE OF CORRECT INJECTION
@@ -1040,7 +1040,7 @@ DIAGRAM_INJECTOR_PROMPT = """
     After injection:
         "The handshake proceeds in three steps as described below.
         [Query: TCP three-way handshake SYN ACK sequence diagram]
-        {diagram_1}
+        {{diagram_1}}
         After the connection is established, data transfer begins."
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1051,8 +1051,13 @@ DIAGRAM_INJECTOR_PROMPT = """
     - Do NOT add any commentary before or after the draft.
     - Preserve ALL inline citation JSON arrays exactly as they appear — do not move,
       reformat, or remove any citation.
-    - Only insert the [Query: ...] line and {diagram_N} placeholder — nothing else.
+    - Only insert the [Query: ...] line and {{diagram_N}} placeholder — nothing else.
 """.strip()
+
+DIAGRAM_INJECTOR_PROMPT = ChatPromptTemplate.from_messages([
+    ("human", DIAGRAM_INJECTOR_USER_PROMPT)
+])
+
 
 
 # ==========================================Retrieval Grader Prompt: version 1=======================================

@@ -65,7 +65,7 @@ def upload_to_vercel_blob(blob_path: str, content, content_type: str = "text/mar
         raise RuntimeError(f"Failed to upload to Vercel Blob: {str(e)}") from e
          
 
-def delete_blobs_in_collection(folder_name: str) -> None:
+def delete_collection_related_data(folder_name: str) -> None:
     """
     Securely deletes an entire folder, including ALL sub-folders and files, 
     from Vercel Blob storage using the OFFICIAL Vercel Python SDK.
@@ -104,11 +104,27 @@ def delete_blobs_in_collection(folder_name: str) -> None:
             print(f"No blobs found in collection folder: {prefix}")
         else:
             print(f"Successfully deleted {total_deleted} items (including sub-folders) from {prefix}")
-            
+        
     except Exception as e:
         print(f"Vercel Blob deletion failed for folder {prefix}: {str(e)}")
         raise RuntimeError(f"Failed to delete folder from Vercel Blob: {str(e)}") from e
     
+    try:
+         # 3. Delete it from Milvus
+        connections.connect(
+            alias="default",
+            uri=settings.ZILLIZ_URI,
+            token=settings.ZILLIZ_TOKEN,
+            secure=True,
+            timeout=60
+        )
+        if utility.has_collection(folder_name):
+            utility.drop_collection(folder_name, using="default")
+            print(f"Successfully deleted Milvus collection: {folder_name}")
+ 
+    except Exception as e:
+        print(f"Milvus cleanup failed for collection {folder_name}: {str(e)}")
+        raise RuntimeError(f"Failed to clean up Milvus collection: {str(e)}") from e
 
 def get_collection_name(project_id) -> str:
     """
@@ -147,74 +163,56 @@ def get_collection_name(project_id) -> str:
     
     return collection_name
 
-def create_zilliz_collection(collection_name: str, dim: int ) -> bool:
+
+
+def create_zilliz_collection(collection_name: str, dim: int, project_id: str) -> bool:
     """
     Creates a collection in Zilliz matching the specified Document schema.
-    Enforces the 5-collection free tier limit by dropping the oldest collection.
+    Uses ONLY the traditional PyMilvus ORM API to prevent mixing connection types.
     """
     try:
-        # 1. Connect to Zilliz Cloud
+        print("Connecting to Zilliz via ORM...")
+        
+        # 1. Open ORM Connection securely
         connections.connect(
-            alias=settings.ZILLIZ_ALIAS,
+            alias="default",
             uri=settings.ZILLIZ_URI,
-            token=settings.ZILLIZ_TOKEN
+            token=settings.ZILLIZ_TOKEN,
+            secure=True,
+            timeout=60
         )
-        print("Connected to Zilliz at URI")
-
-        # 2. Check if collection already exists
-        try:
-            if utility.has_collection(collection_name, using="default"):
-                print(f"Collection '{collection_name}' already exists.")
-                return False
-        except Exception as e:
-            print(f"Error checking collection existence: {e}")
+        
+        # 2. Check existence
+        if utility.has_collection(collection_name, using="default"):
+            print(f"Collection '{collection_name}' already exists.")
             return False
             
-        # 3. Handle Free Tier Limit (Max 5 Collections)
+        # 3. Enforce limit & cleanup
         existing_collections = utility.list_collections(using="default")
         
         if len(existing_collections) >= 5:
-            print(f"Limit reached ({len(existing_collections)} collections). Finding oldest to drop...")
+            print(f"Limit reached ({len(existing_collections)} collections). Cleaning up...")
             
-            # Instantiate MilvusClient to access collection metadata
-            client = MilvusClient(uri=settings.ZILLIZ_URI, token=settings.ZILLIZ_TOKEN)
-            
-            oldest_collection = None
-            oldest_timestamp = float('inf')
-
-            for col in existing_collections:
-                # describe_collection returns a dictionary containing 'created_timestamp'
-                desc = client.describe_collection(collection_name=col)
-                c_timestamp = desc.get("created_timestamp", 0)
-                
-                if c_timestamp < oldest_timestamp:
-                    oldest_timestamp = c_timestamp
-                    oldest_collection = col
-            
-            if oldest_collection:
-                print(f"Dropping oldest collection: '{oldest_collection}'")
-                utility.drop_collection(oldest_collection, using="default")
-                
+            # Since ORM lacks a native timestamp fetcher, we drop the first available one 
+            collection_to_drop = existing_collections[0]        
+            # Clean up associated blobs and DB entries
+            delete_collection_related_data(folder_name=collection_to_drop)
+            print(f"Both Blob and milvus data cleanup complete for collection: {collection_to_drop}")
+            DocuProcess.objects.filter(project_id=project_id, collection_name=collection_to_drop).delete()
+        
+        # 4. Create the Schema using ORM
         print(f"Creating custom schema for '{collection_name}'...")
         
-        # 4. Define fields based on your Document payload
         fields = [
-            # Primary Key & Vector
             FieldSchema(name="pk", dtype=DataType.INT64, is_primary=True, auto_id=True),
             FieldSchema(name="vector", dtype=DataType.FLOAT_VECTOR, dim=dim),
-            
-            # Document Content
             FieldSchema(name="page_content", dtype=DataType.VARCHAR, max_length=65535),
-            
-            # Metadata Mapping
             FieldSchema(name="project_id", dtype=DataType.VARCHAR, max_length=255),
             FieldSchema(name="source_title", dtype=DataType.VARCHAR, max_length=65535),
             FieldSchema(name="page_number", dtype=DataType.INT64),
             FieldSchema(name="is_vision_extracted", dtype=DataType.BOOL),
-            
-            # Isolation Fields for Q&A and Reference data
             FieldSchema(name="source_url", dtype=DataType.VARCHAR, max_length=65535),
-            FieldSchema(name="chunk_type", dtype=DataType.VARCHAR, max_length=50), 
+            FieldSchema(name="chunk_type", dtype=DataType.VARCHAR, max_length=50),
             FieldSchema(name="question_text", dtype=DataType.VARCHAR, max_length=1000, nullable=True),
         ]
         
@@ -223,41 +221,33 @@ def create_zilliz_collection(collection_name: str, dim: int ) -> bool:
             description="Schema for LangChain Document ingestion"
         )
 
-        # 5. Create collection
-        try:
-            collection = Collection(
-                name=collection_name, 
-                schema=schema, 
-                consistency_level='Session', 
-                using="default"
-            )
-            print(f"Collection '{collection_name}' successfully created.")
-        except Exception as e:
-            print(f"Failed to create collection '{collection_name}': {str(e)}")
-            return False
+        # 5. Create the Collection
+        collection = Collection(
+            name=collection_name, 
+            schema=schema, 
+            using="default", 
+            consistency_level="Session"
+        )
         
-        # 6. Create Vector Index
+        # 6. Define & Create all Indexes
         vector_index_params = {
             "index_type": "HNSW",
             "metric_type": "COSINE",
             "params": {"M": 16, "efConstruction": 200}
         }
-        collection.create_index(field_name="vector", index_params=vector_index_params)
-        print("Vector index (HNSW/COSINE) created.")
-
-        # 7. Create Scalar Indexes for faster metadata filtering
-        collection.create_index(field_name="project_id", index_params={"index_type": "STL_SORT"})
-        collection.create_index(field_name="source_url", index_params={"index_type": "STL_SORT"})
-        collection.create_index(field_name="chunk_type", index_params={"index_type": "STL_SORT"})
-        print("Scalar indexes on 'project_id', 'source_url', and 'chunk_type' created.")
         
+        # Build Vector Index
+        collection.create_index(field_name="vector", index_params=vector_index_params, using="default")
+        
+        # Build Scalar Indexes for fast metadata filtering
+        collection.create_index(field_name="project_id", index_params={"index_type": "STL_SORT"}, using="default")
+        collection.create_index(field_name="source_url", index_params={"index_type": "STL_SORT"}, using="default")
+        collection.create_index(field_name="chunk_type", index_params={"index_type": "STL_SORT"}, using="default")
+
+        print(f"Collection '{collection_name}' successfully created with all indexes via ORM.")
         return True
 
     except Exception as e:
         print(f"Critical error during collection setup: {e}")
         return False
-
-
-
-
 

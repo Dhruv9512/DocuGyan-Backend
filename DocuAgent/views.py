@@ -196,6 +196,20 @@ class GroomingView(APIView):
         except DocuProcess.DoesNotExist:
             return Response({"error": "Project not found."}, status=status.HTTP_404_NOT_FOUND)
     
+    def get(self, request):
+        user_uuid = str(request.user.user_uuid)
+        project_id = request.query_params.get('project_id')
+
+        if not user_uuid:
+            return Response({"error": "user_uuid is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not project_id:
+            return Response({"error": "project_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            docu_process = DocuProcess.objects.get(project_id=project_id, user_uuid=user_uuid)
+            return Response({"grooming_data": docu_process.grooming_data}, status=status.HTTP_200_OK)
+        except DocuProcess.DoesNotExist:
+            return Response({"error": "Project not found."}, status=status.HTTP_404_NOT_FOUND)
 
 
 class CurrentUserDetailView(APIView):

@@ -23,11 +23,18 @@ class DocuExtractorAgent:
         """
         FAN-OUT: Reads all URLs and maps them to parallel worker nodes.
         """
-        self.notifier.send_message("Extractor Agent: Starting parallel document extraction...")
         urls = state.get("reference_urls", [])
+        self.notifier.send_message(
+            f"Extractor Agent: Starting parallel document extraction for {len(urls)} document(s)...",
+            current_node="extractor",
+            status="processing",
+        )
         
         if not urls:
-            self.notifier.send_message("Extractor Agent: No reference URLs provided. Skipping extraction.")
+            self.notifier.send_error(
+                "Extractor Agent: No reference URLs provided. Skipping extraction.",
+                current_node="extractor",
+            )
             raise ValueError("No reference URLs provided for extraction.")
         
         # Spin up multiple 'extract_single_url_worker' nodes at the same time
@@ -44,12 +51,22 @@ class DocuExtractorAgent:
         project_id = state["project_id"]
         
         try:
+            self.notifier.send_message(
+                f"Extractor Agent: Extracting document from {url}...",
+                current_node="extractor",
+                status="processing",
+            )
             # Execute the extraction logic
             blob_url = build_DocuExtractor(project_id=project_id, url=url)
+            self.notifier.send_message(
+                f"Extractor Agent: Extraction complete for {url}.",
+                current_node="extractor",
+                status="completed",
+            )
             # Must return as a list so operator.add can combine them
             return {"extracted_doc_blob_url": [blob_url]}
         except Exception as e:
-            self.notifier.send_error(f"Failed to extract: {str(e)}")
+            self.notifier.send_error(f"Failed to extract: {str(e)}", current_node="extractor")
             # Return empty list on failure so the reducer doesn't break
             raise RuntimeError(f"Failed to extract: {str(e)}") from e
 
@@ -58,24 +75,46 @@ class DocuExtractorAgent:
         WORKER: Runs in parallel with extraction. 
         Takes the original text questions and refines them using the LLM.
         """
-        self.notifier.send_message("Extractor Agent: Starting question refinement in parallel...")
+        self.notifier.send_message(
+            "Extractor Agent: Starting question refinement in parallel...",
+            current_node="extractor",
+            status="processing",
+        )
         
         original_questions = state.get("original_questions", [])
         refined_urls = []
         
         if original_questions:
             try:
+                source_count = len(original_questions) if isinstance(original_questions, list) else 1
+                self.notifier.send_message(
+                    f"Extractor Agent: Refining questions from {source_count} source(s)...",
+                    current_node="extractor",
+                    status="processing",
+                )
                 # If your QuestionRefiner is adapted to take a list of strings directly:
                 refined_urls = build_QuestionRefiner(self.project_id, original_questions)
-                self.notifier.send_message("Extractor Agent: Question refinement complete.")
+                self.notifier.send_message(
+                    "Extractor Agent: Question refinement complete.",
+                    current_node="extractor",
+                    status="completed",
+                )
             except Exception as e:
-                self.notifier.send_error(f"Failed to refine questions: {str(e)}")
+                self.notifier.send_error(f"Failed to refine questions: {str(e)}", current_node="extractor")
                 raise RuntimeError(f"Failed to refine questions: {str(e)}") from e
         else:
-            self.notifier.send_message("Extractor Agent: No original questions provided. Skipping refinement.")
+            self.notifier.send_error(
+                "Extractor Agent: No original questions provided. Skipping refinement.",
+                current_node="extractor",
+            )
             raise ValueError("No original questions provided for refinement.")
             
         final_url = refined_urls.get("extracted_questions_blob_url")
+        self.notifier.send_message(
+            f"Extractor Agent: Final refined questions URL: {final_url}",
+            current_node="extractor",
+            status="completed",
+        )
         return {"extracted_questions_blob_url": [final_url] if final_url else []}
     
     

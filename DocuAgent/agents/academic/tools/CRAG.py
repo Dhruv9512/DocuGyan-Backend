@@ -8,6 +8,7 @@ from DocuAgent.utils.utility import get_collection_name
 from core.utils.llm_engine import LLMEngine
 from DocuAgent.utils.llm_calls import DocuAgentLLMCalls
 from DocuAgent.schemas.llm_schemas import RetrievalGraderOutput
+from DocuAgent.websocket.notifier import Notifier
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ class CorrectiveRetriever:
     def __init__(self, project_id: str, search_queries: Union[str, List[str]]) -> None:
         # CRITICAL FIX: Save project_id to the instance so the filter_expr works
         self.project_id = project_id
+        self.notifier = Notifier(project_id)
         self.embedding_model = LLMEngine.get_huggingface_embedding_client()
         
         # SAFETY CHECK: Handle String, List[str], or an accidental empty list from the LLM
@@ -89,12 +91,27 @@ class CorrectiveRetriever:
         Executes the full C-RAG workflow.
         Returns the raw LangChain Documents and the Grader Assessment.
         """
+        self.notifier.send_message(
+            "Academic Agent: Running corrective retrieval.",
+            current_node="academic",
+            status="processing",
+        )
         all_docs = self._execute_retrieval(top_k=top_k)
         primary_query = self.search_queries[0]
+        self.notifier.send_message(
+            f"Academic Agent: Retrieved {len(all_docs)} internal document(s) from vector search.",
+            current_node="academic",
+            status="processing",
+        )
         
         # ── Step 1: Zero-hit fast path ──
         if not all_docs:
             logger.warning("[CorrectiveRetriever] Zero hits from Milvus — forcing web search.")
+            self.notifier.send_message(
+                "Academic Agent: No internal matches found. Falling back to web search.",
+                current_node="academic",
+                status="processing",
+            )
             web_docs = self._web_search_as_documents(primary_query)
             fallback_grade = RetrievalGraderOutput(
                 binary_score="not_found",
@@ -112,6 +129,11 @@ class CorrectiveRetriever:
         # ── Step 3: Decide & Route ──
         if grade.binary_score == "not_found":
             logger.warning("[CorrectiveRetriever] Grade=not_found — replacing with web docs.")
+            self.notifier.send_message(
+                "Academic Agent: Retrieval quality not sufficient. Switching to web context.",
+                current_node="academic",
+                status="processing",
+            )
             return {
                 "retrieved_docs": self._web_search_as_documents(primary_query),
                 "grader_assessment": grade
@@ -119,6 +141,11 @@ class CorrectiveRetriever:
 
         elif grade.binary_score == "ambiguous":
             logger.warning("[CorrectiveRetriever] Grade=ambiguous — augmenting with web docs.")
+            self.notifier.send_message(
+                "Academic Agent: Retrieval is ambiguous. Merging internal and web context.",
+                current_node="academic",
+                status="processing",
+            )
             web_docs = self._web_search_as_documents(primary_query)
 
             half_k = top_k // 2
@@ -140,6 +167,11 @@ class CorrectiveRetriever:
 
         else:  # "accurate"
             logger.info("[CorrectiveRetriever] Grade=accurate — keeping internal docs.")
+            self.notifier.send_message(
+                "Academic Agent: Retrieval is accurate. Proceeding with internal context.",
+                current_node="academic",
+                status="completed",
+            )
             return {
                 "retrieved_docs": all_docs,
                 "grader_assessment": grade
@@ -158,6 +190,10 @@ class CorrectiveRetriever:
             ]
         except Exception as exc:
             logger.error("[CorrectiveRetriever] Web search failed: %s", exc)
+            self.notifier.send_error(
+                f"Academic Agent: Web search failed: {exc}",
+                current_node="academic",
+            )
             return [Document(page_content="Web search unavailable.", metadata={"source_url": "fallback", "type": "error"})]
 
 # ================================================================
@@ -168,6 +204,10 @@ def build_CorrectiveRetriever(project_id: str, search_queries: Union[str, List[s
         retriever = CorrectiveRetriever(project_id, search_queries)
         return retriever.run()
     except Exception as exc:
+        Notifier(project_id).send_error(
+            f"Academic Agent: Corrective retriever failed: {exc}",
+            current_node="academic",
+        )
         logger.error("[CorrectiveRetriever] Failed to build corrective retriever: %s", exc)
         return {
             "retrieved_docs": [],

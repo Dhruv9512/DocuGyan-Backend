@@ -2,8 +2,10 @@
 from celery import shared_task
 from .models import DocuProcess
 from DocuAgent.agents.orchestrator.graph import build_docu_pipeline_orchestrator
-from DocuAgent.utils.utility import delete_blobs_in_collection, get_collection_name
+from DocuAgent.utils.utility import delete_collection_related_data, get_collection_name
 from DocuGyan.celery import stop_task
+from pymilvus import connections, utility
+from django.conf import settings
 import logging
 logger = logging.getLogger(__name__)
 
@@ -27,7 +29,7 @@ def process_project_deletion(self, project_id, user_uuid):
     try:
         # 1. Delete the actual files from Vercel Blob Storage
         blob_collection = get_collection_name(project_id)
-        delete_blobs_in_collection(blob_collection)
+        delete_collection_related_data(blob_collection)
         logger.info(f"Successfully deleted Vercel blobs for project: {project_id}")
         
         # 2. Hard Delete: Permanently remove the record from the database

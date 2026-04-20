@@ -487,11 +487,17 @@ class AcademicAgent:
         self, state: AcademicAgentState
     ) -> Union[List[Send], dict]:
         self.notifier.send_message(
-            "Academic Agent: Extracting questions and initiating workers..."
+            "Academic Agent: Extracting questions and initiating workers...",
+            current_node="academic",
+            status="processing",
         )
 
         urls = state.get("extracted_questions_blob_url", [])
         if not urls:
+            self.notifier.send_error(
+                "Academic Agent: No extracted questions URL found.",
+                current_node="academic",
+            )
             raise ValueError("No extracted questions URL found.")
 
         try:
@@ -502,7 +508,17 @@ class AcademicAgent:
             raise RuntimeError(f"Failed to fetch questions: {e}")
 
         if not questions:
+            self.notifier.send_error(
+                "Academic Agent: No viable questions parsed from the document.",
+                current_node="academic",
+            )
             raise ValueError("No viable questions parsed from the document.")
+
+        self.notifier.send_message(
+            f"Academic Agent: Parsed {len(questions)} question(s). Dispatching workers.",
+            current_node="academic",
+            status="processing",
+        )
 
         return [
             Send("process_single_question", {
@@ -513,7 +529,11 @@ class AcademicAgent:
         ]
 
     def aggregate_and_upload(self, state: AcademicAgentState) -> dict:
-        self.notifier.send_message("Academic Agent: Stitching final study guide...")
+        self.notifier.send_message(
+            "Academic Agent: Stitching final study guide...",
+            current_node="academic",
+            status="processing",
+        )
 
         answers = state.get("completed_answers", [])
         failed_questions  = state.get("failed_questions",  [])
@@ -531,7 +551,9 @@ class AcademicAgent:
         final_url = upload_to_vercel_blob(blob_path, final_markdown, "text/markdown")
 
         self.notifier.send_message(
-            f"Academic Agent Complete. {len(answers)} answers processed."
+            f"Academic Agent Complete. {len(answers)} answers processed.",
+            current_node="academic",
+            status="completed",
         )
 
         try:
@@ -541,12 +563,19 @@ class AcademicAgent:
                 is_final_answer=True,
             )
             if success:
-                self.notifier.send_message("Final Q&A successfully indexed in Milvus.")
+                self.notifier.send_message(
+                    "Final Q&A successfully indexed in Milvus.",
+                    current_node="academic",
+                    status="completed",
+                )
             else:
-                self.notifier.send_error("Vector ingestion process returned False.")
+                self.notifier.send_error(
+                    "Vector ingestion process returned False.",
+                    current_node="academic",
+                )
         except Exception as e:
             logger.error(f"Failed to ingest Q&A: {e}")
-            self.notifier.send_error(f"Failed to index Q&A: {e}")
+            self.notifier.send_error(f"Failed to index Q&A: {e}", current_node="academic")
 
         return {"final_answers_blob_url": [final_url]}
 
@@ -612,6 +641,10 @@ class AcademicAgent:
                 f"[Worker] QuestionWorkerGraph FAILED for "
                 f"'{question[:60]}...' | error={exc}",
                 exc_info=True,
+            )
+            self.notifier.send_error(
+                f"Academic Agent: Worker failed for question '{question[:60]}...': {exc}",
+                current_node="academic",
             )
             return {
                 "completed_answers": [],

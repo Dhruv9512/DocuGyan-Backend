@@ -2,7 +2,6 @@ import re
 import time
 import logging
 import concurrent.futures
-from pydantic import BaseModel, Field
 import requests
 
 
@@ -12,6 +11,7 @@ from DocuAgent.utils.extraction import build_DocuExtractor
 from DocuAgent.utils.utility import upload_to_vercel_blob, get_collection_name, get_request_session_with_blob_auth, sanitize_blob_filename
 
 from DocuAgent.schemas.llm_schemas import RefinedBatch
+from DocuAgent.websocket.notifier import Notifier
 
 logger = logging.getLogger(__name__)
 
@@ -28,11 +28,33 @@ class QuestionRefiner:
         self.extracted_md_url = None
         self.refined_md_url = None
         self.blob_collection = get_collection_name(self.project_id)
+        self.notifier = Notifier(project_id)
         
     def run(self) -> dict:
         logger.info(f"Building QuestionRefiner pipeline for project {self.project_id}...")
+        self.notifier.send_message(
+            f"Question Extractor: Starting question refinement for project {self.project_id}...",
+            current_node="extractor",
+            status="processing",
+        )
         self._extract()
+        self.notifier.send_message(
+            "Question Extractor: Extraction complete. Starting refinement phase...",
+            current_node="extractor",
+            status="processing",
+        )
+        
+        self.notifier.send_message(
+            f"Question Refining: Starting refinement for project {self.project_id}...",
+            current_node="extractor",
+            status="processing",
+        )
         self._refine()
+        self.notifier.send_message(
+            "Question Refining: Refinement phase complete.",
+            current_node="extractor",
+            status="completed",
+        )
         return {
             "project_id": self.project_id,
             "raw_questions_blob_url": self.extracted_md_url,
@@ -53,6 +75,10 @@ class QuestionRefiner:
             response.raise_for_status()
             raw_text = response.text
         except requests.exceptions.RequestException as e:
+            self.notifier.send_error(
+                f"Question Refining: Failed to fetch extracted markdown: {str(e)}",
+                current_node="extractor",
+            )
             logger.error(f"Failed to download raw markdown from {self.extracted_md_url}")
             raise RuntimeError(f"Failed to fetch extracted text for refinement: {str(e)}") from e
 
@@ -66,9 +92,16 @@ class QuestionRefiner:
         batch_size = 30
         batches = [raw_questions[i:i + batch_size] for i in range(0, len(raw_questions), batch_size)]
         logger.info(f"Split into {len(batches)} exact batches.")
+        self.notifier.send_message(
+            f"Question Refining: Parsed {len(raw_questions)} question block(s) into {len(batches)} batch(es).",
+            current_node="extractor",
+            status="processing",
+        )
 
         all_refined_questions = []
         failed_batches = 0
+        completed_batches = 0
+        total_batches = len(batches)
         
         # 3. PROTECT GROQ FREE TIER: Max workers reduced to 2
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
@@ -85,7 +118,17 @@ class QuestionRefiner:
                     batch_result = future.result()
                     if batch_result and batch_result.questions:
                         all_refined_questions.extend(batch_result.questions)
+                    completed_batches += 1
+                    self.notifier.send_message(
+                        f"Question Refining: Completed batch {completed_batches}/{total_batches}.",
+                        current_node="extractor",
+                        status="processing",
+                    )
                 except Exception as e:
+                    self.notifier.send_error(
+                        f"Question Refining: A batch failed to refine: {str(e)}",
+                        current_node="extractor",
+                    )
                     # Catch the failure so the OTHER threads keep running
                     logger.error(f"A batch permanently failed after retries: {str(e)}")
                     failed_batches += 1
@@ -97,6 +140,11 @@ class QuestionRefiner:
         elif failed_batches > 0:
              # Partial success state
              logger.warning(f"Refinement finished with {failed_batches} failed batches. Saving partial data ({len(all_refined_questions)} questions).")
+             self.notifier.send_message(
+                 f"Question Refining: Continuing with partial success ({failed_batches} failed batch(es)).",
+                 current_node="extractor",
+                 status="processing",
+             )
 
         if not all_refined_questions:
              raise ValueError("Refinement completed but zero valid questions were generated.")
@@ -111,6 +159,11 @@ class QuestionRefiner:
             blob_path=blob_path, 
             content=final_markdown,
             content_type="text/markdown"
+        )
+        self.notifier.send_message(
+            f"Question Refining: Uploaded refined questions to {self.refined_md_url}",
+            current_node="extractor",
+            status="completed",
         )
         logger.info(f"Refinement complete. Refined Markdown URL: {self.refined_md_url}")
 
@@ -179,9 +232,15 @@ def build_QuestionRefiner(project_id: str, file_url: str) -> dict:
         project_id: Unique identifier for the project.
         file_url: URL of the original document to process.
     """
+    refiner = None
     try:
         refiner = QuestionRefiner(project_id, file_url)
         return refiner.run()
     except Exception as e:
+        notifier = refiner.notifier if refiner else Notifier(project_id)
+        notifier.send_error(
+            f"Failed to build or run QuestionRefiner: {str(e)}",
+            current_node="extractor",
+        )
         logger.error(f"Failed to build or run QuestionRefiner: {str(e)}", exc_info=True)
         raise RuntimeError(f"Failed to build or run QuestionRefiner: {str(e)}") from e

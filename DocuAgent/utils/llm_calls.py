@@ -580,11 +580,11 @@ class DocuAgentLLMCalls:
 
         # Compose prompt into chain so callers invoke with {"question": ..., "draft": ...}
         chain = DIAGRAM_INJECTOR_PROMPT | primary.with_fallbacks([
-            fallback_1,
-            fallback_2,
-            fallback_3,
-            fallback_4,
-            fallback_5,
+            DIAGRAM_INJECTOR_PROMPT | fallback_1,
+            DIAGRAM_INJECTOR_PROMPT | fallback_2,
+            DIAGRAM_INJECTOR_PROMPT | fallback_3,
+            DIAGRAM_INJECTOR_PROMPT | fallback_4,
+            DIAGRAM_INJECTOR_PROMPT | fallback_5,
         ])
 
         if use_backup:

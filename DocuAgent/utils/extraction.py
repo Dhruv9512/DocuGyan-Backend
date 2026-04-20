@@ -11,6 +11,7 @@ import requests  # PyMuPDF
 # Import LLM Utility for Vision Calls
 from DocuAgent.utils.llm_calls import DocuAgentLLMCalls
 from DocuAgent.utils.utility import upload_to_vercel_blob, get_collection_name, get_request_session_with_blob_auth, sanitize_blob_filename
+from DocuAgent.websocket.notifier import Notifier
 from django.conf import settings
 
 
@@ -29,36 +30,77 @@ class DocuExtractor:
         self.session = get_request_session_with_blob_auth()
         self.image_cache = {}  
         self.blob_collection = get_collection_name(self.project_id)
+        self.notifier = Notifier(project_id)
 
   
 
     def extract_from_url(self) -> str:
         extension = self._get_file_extension(self.file_url)
         file_name = self._get_file_name(self.file_url)
+        readable_ext = extension if extension else "unknown"
         
         logger.info(f"Starting pipeline for: {file_name} (Project: {self.project_id})")
+        self.notifier.send_message(
+            f"DocuExtractor: Processing {file_name} ({readable_ext}).",
+            current_node="extractor",
+            status="processing",
+        )
 
         try:
             if extension == '.pdf':
+                self.notifier.send_message(
+                    f"DocuExtractor: Using PDF hybrid extraction for {file_name}.",
+                    current_node="extractor",
+                    status="processing",
+                )
                 extracted_text = self._extract_pdf()
             elif extension in ['.txt', '.md']:
+                self.notifier.send_message(
+                    f"DocuExtractor: Using text extraction for {file_name}.",
+                    current_node="extractor",
+                    status="processing",
+                )
                 extracted_text = self._extract_text()
             elif extension in ['.png', '.jpg', '.jpeg', '.webp', '.bmp']:
+                self.notifier.send_message(
+                    f"DocuExtractor: Using vision extraction for image {file_name}.",
+                    current_node="extractor",
+                    status="processing",
+                )
                 extracted_text = self._extract_image()
             elif extension in ['.doc', '.docx']:
                 extracted_text = self._extract_word()
             elif extension in ['.ppt', '.pptx']:
                 extracted_text = self._extract_ppt()
             else:
+                self.notifier.send_error(
+                    f"DocuExtractor: Unsupported format {readable_ext} for {file_name}.",
+                    current_node="extractor",
+                )
                 raise ValueError(f"Unsupported format: {extension}")
 
             md_filename = sanitize_blob_filename(f"{os.path.splitext(file_name)[0].strip()}.md")
             blob_path = f"{self.blob_collection}/temp/{md_filename}"
 
             logger.info("Uploading extracted Markdown to Vercel Blob...")
-            return upload_to_vercel_blob(blob_path=blob_path, content=extracted_text, content_type="text/markdown")
+            self.notifier.send_message(
+                f"DocuExtractor: Uploading extracted markdown for {file_name}.",
+                current_node="extractor",
+                status="processing",
+            )
+            uploaded_url = upload_to_vercel_blob(blob_path=blob_path, content=extracted_text, content_type="text/markdown")
+            self.notifier.send_message(
+                f"DocuExtractor: Extraction complete for {file_name}.",
+                current_node="extractor",
+                status="completed",
+            )
+            return uploaded_url
 
         except Exception as e:
+            self.notifier.send_error(
+                f"DocuExtractor: Extraction failed for {file_name}: {str(e)}",
+                current_node="extractor",
+            )
             logger.error(f"Pipeline failed for {self.file_url}: {e}", exc_info=True)
             raise RuntimeError(f"Extraction pipeline failed: {str(e)}") from e
         
@@ -90,6 +132,11 @@ class DocuExtractor:
             # 3. Process the file
             with fitz.open(temp_pdf_name) as doc:
                 total_pages = len(doc)
+                self.notifier.send_message(
+                    f"DocuExtractor: PDF contains {total_pages} page(s). Running hybrid extraction.",
+                    current_node="extractor",
+                    status="processing",
+                )
                 extracted_pages = [None] * total_pages 
                 
                 vision_batch_images = []

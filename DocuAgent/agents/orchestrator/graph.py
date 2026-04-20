@@ -33,10 +33,17 @@ class DocuPipelineOrchestrator:
     def ingestion_router(self, state: OrchestratorState) -> Literal["vector_rag_ingest", "graph_rag_ingest", "vectorless_ingest"]:
         """Routes to the correct ingestor based on the LLM's classification."""
         strategy = state.get("rag_strategy", "vector")
-        self.notifier.send_message(f"Orchestrator: Routing to {strategy.capitalize()} Ingestor...")
+        self.notifier.send_message(
+            f"Orchestrator: Routing to {strategy.capitalize()} Ingestor...",
+            current_node="orchestrator",
+            status="processing",
+        )
         
         if not state.get("extracted_questions_blob_url") or not state.get("extracted_doc_blob_url"):
-            self.notifier.send_error(f"Docuextractor Agent failed to produce extracted urls of refined question url and referenced urls. Halting pipeline. State: {state}")
+            self.notifier.send_error(
+                f"Docuextractor Agent failed to produce extracted urls of refined question url and referenced urls. Halting pipeline. State: {state}",
+                current_node="extractor",
+            )
             self.base_instance.status = getattr(DocuProcess.StatusChoices, 'FAILED', 'FAILED')
             raise RuntimeError("Docuextractor Agent failed to produce extracted urls of refined question url and referenced urls. Halting pipeline.")
 
@@ -50,7 +57,11 @@ class DocuPipelineOrchestrator:
     def domain_router(self, state: OrchestratorState) -> Literal["academic_agent", "financial_agent", "audit_agent"]:
         """Routes to the correct specialist agent based on domain classification."""
         domain = state.get("domain") or "audit" 
-        self.notifier.send_message(f"Orchestrator: Routing to {domain.capitalize()} Specialist Agent...")
+        self.notifier.send_message(
+            f"Orchestrator: Routing to {domain.capitalize()} Specialist Agent...",
+            current_node="orchestrator",
+            status="processing",
+        )
         
         if domain == "academic":
             return "academic_agent"
@@ -69,10 +80,20 @@ class DocuPipelineOrchestrator:
         EVALUATOR AGENT: This is the ONLY place the LLM makes a decision in this pipeline.
         It evaluates the extracted text and outputs a structured Pydantic response.
         """
-        self.notifier.send_message("Evaluator Agent: Defaulting to Vector Strategy for V1.")
+        self.notifier.send_message(
+            "Evaluator Agent: Classifying RAG strategy...",
+            current_node="orchestrator",
+            status="processing",
+        )
+        strategy = "vector"
+        self.notifier.send_message(
+            f"Evaluator Agent: Defaulting to {strategy.capitalize()} strategy for MVP.",
+            current_node="orchestrator",
+            status="completed",
+        )
         
         return {
-            "rag_strategy": "vector",
+            "rag_strategy": strategy,
             "rag_reasoning": "Vector is the default strategy for MVP.",
         }
     
@@ -80,12 +101,22 @@ class DocuPipelineOrchestrator:
         """
         EVALUATOR AGENT: Reads a snippet of references and questions to determine the domain.
         """
-        self.notifier.send_message("Evaluator Agent: Classifying document domain...")
+        self.notifier.send_message(
+            "Evaluator Agent: Classifying document domain...",
+            current_node="orchestrator",
+            status="processing",
+        )
         
         # NOTE: A real LLM structured output call will go here using the DomainClassification schema.
         # For now, we mock the response to allow the graph to run and test the router.
+        domain = "academic"
+        self.notifier.send_message(
+            f"Evaluator Agent: Domain classified as {domain.capitalize()}.",
+            current_node="orchestrator",
+            status="completed",
+        )
         return {
-            "domain": "academic"
+            "domain": domain
         }
 
     # =================================
@@ -93,27 +124,56 @@ class DocuPipelineOrchestrator:
     # =================================
     def vector_rag_ingest(self, state: OrchestratorState) -> dict:
         """Worker node: Ingests to Vector DB."""
-        self.notifier.send_message("Vector Ingestor: Processing chunks and generating embeddings...")
+        self.notifier.send_message(
+            "Vector Ingestor: Processing chunks and generating embeddings...",
+            current_node="vector_rag_ingest",
+            status="processing",
+        )
         try:
             result = build_vector_db_ingestor(project_id=self.project_id, extracted_doc_urls=state.get("extracted_doc_blob_url", []))
         except Exception as e:
-            self.notifier.send_error(f"Vector Ingestor failed: {str(e)}")
+            self.notifier.send_error(
+                f"Vector Ingestor failed: {str(e)}",
+                current_node="vector_rag_ingest",
+            )
             raise RuntimeError(f"Vector Ingestor failed: {str(e)}") from e
         
         if result:
-            self.notifier.send_message("Vector Ingestor: Successfully ingested documents into the vector database.")
+            self.notifier.send_message(
+                "Vector Ingestor: Successfully ingested documents into the vector database.",
+                current_node="vector_rag_ingest",
+                status="completed",
+            )
             return {"ingestion_done": True}
 
     def graph_rag_ingest(self, state: OrchestratorState) -> dict:
         """Worker node: Ingests to Graph DB."""
-        self.notifier.send_message("Graph Ingestor: Mapping entities and relationships...")
+        self.notifier.send_message(
+            "Graph Ingestor: Mapping entities and relationships...",
+            current_node="graph_rag_ingest",
+            status="processing",
+        )
+        self.notifier.send_message(
+            "Graph Ingestor: Graph mapping complete.",
+            current_node="graph_rag_ingest",
+            status="completed",
+        )
 
         # Add actual ingestion logic here in the future
         return {"ingestion_done": True}
 
     def vectorless_ingest(self, state: OrchestratorState) -> dict:
         """Worker node: Ingests raw text."""
-        self.notifier.send_message("Vectorless Ingestor: Storing raw text data...")
+        self.notifier.send_message(
+            "Vectorless Ingestor: Storing raw text data...",
+            current_node="vectorless_ingest",
+            status="processing",
+        )
+        self.notifier.send_message(
+            "Vectorless Ingestor: Raw text ingestion complete.",
+            current_node="vectorless_ingest",
+            status="completed",
+        )
         # Add actual ingestion logic here in the future
         return {"ingestion_done": True}
     
@@ -123,17 +183,29 @@ class DocuPipelineOrchestrator:
     # =========================================
     def financial_agent(self, state: OrchestratorState) -> dict:
         """Placeholder for Financial Sub-graph"""
-        self.notifier.send_message("Financial Agent: Processing financial models and tables...")
+        self.notifier.send_message(
+            "Financial Agent: Processing financial models and tables...",
+            current_node="financial",
+            status="processing",
+        )
         return {}
 
     def audit_agent(self, state: OrchestratorState) -> dict:
         """Placeholder for Audit Sub-graph"""
-        self.notifier.send_message("Audit Agent: Cross-referencing compliance and risk factors...")
+        self.notifier.send_message(
+            "Audit Agent: Cross-referencing compliance and risk factors...",
+            current_node="audit",
+            status="processing",
+        )
         return {}
     
     def academic_agent(self, state: OrchestratorState) -> dict:
         """Placeholder for Academic Sub-graph"""
-        self.notifier.send_message("Academic Agent: Analyzing theories and citations...")
+        self.notifier.send_message(
+            "Academic Agent: Analyzing theories and citations...",
+            current_node="academic",
+            status="processing",
+        )
         return {}
 
     # ==========================================
@@ -202,7 +274,18 @@ class DocuPipelineOrchestrator:
                 "thread_id": self.project_id
             }
         }
-        return self.graph.invoke(initial_state, config=config)
+        self.notifier.send_message(
+            "Orchestrator: Graph execution started.",
+            current_node="orchestrator",
+            status="processing",
+        )
+        result = self.graph.invoke(initial_state, config=config)
+        self.notifier.send_message(
+            "Orchestrator: Graph execution finished. Persisting outputs.",
+            current_node="orchestrator",
+            status="processing",
+        )
+        return result
 
 # ==================================================================
 #  Builder Function to Initialize and Run the Orchestrator
@@ -224,7 +307,11 @@ def build_docu_pipeline_orchestrator(project_id: str, user_uuid: str):
         # 1. Fetch the record before doing any heavy lifting.
         docu_process = DocuProcess.objects.get(project_id=project_id, user_uuid=user_uuid)
 
-        notifier.send_message("Initializing DocuPipeline Orchestrator...")
+        notifier.send_message(
+            "Initializing DocuPipeline Orchestrator...",
+            current_node="orchestrator",
+            status="processing",
+        )
         
         # 2. Initialize and run the orchestrator
         orchestrator = DocuPipelineOrchestrator(project_id=project_id, user_uuid=user_uuid)
@@ -239,18 +326,22 @@ def build_docu_pipeline_orchestrator(project_id: str, user_uuid: str):
         docu_process.save(update_fields=['status', 'extracted_doc_urls', 'refined_question_urls', 'ingestion_strategy', 'results_url'])
         
         # Notify completion
-        notifier.send_completed(final_result={
-            "extracted_docs_blob_urls": result.get("extracted_doc_blob_url"), 
-            "extracted_questions_blob_url": result.get("extracted_questions_blob_url"),
-            "final_answers_blob_url": result.get("final_answers_blob_url"),
-        })
+        notifier.send_completed(
+            final_result={
+                "extracted_docs_blob_urls": result.get("extracted_doc_blob_url"), 
+                "extracted_questions_blob_url": result.get("extracted_questions_blob_url"),
+                "final_answers_blob_url": result.get("final_answers_blob_url"),
+            },
+            current_node="orchestrator",
+            message="DocuPipeline completed successfully.",
+        )
 
         return result
     
     except DatabaseError as db_err:
         # Catch initial DB fetch errors or commit errors
         error_message = f"Database error during pipeline execution: {str(db_err)}"
-        notifier.send_error(error_message)
+        notifier.send_error(error_message, current_node="orchestrator")
         raise RuntimeError(error_message) from db_err
 
     except Exception as e:
@@ -261,7 +352,10 @@ def build_docu_pipeline_orchestrator(project_id: str, user_uuid: str):
             fallback_process.error_message = str(e)
             fallback_process.save(update_fields=['status', 'error_message'])
         except Exception as fallback_err:
-            notifier.send_error(f"Failed to update process status after error: {str(fallback_err)}")
+            notifier.send_error(
+                f"Failed to update process status after error: {str(fallback_err)}",
+                current_node="orchestrator",
+            )
         
-        notifier.send_error(str(e))
+        notifier.send_error(str(e), current_node="orchestrator")
         raise e
