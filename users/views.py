@@ -1,5 +1,6 @@
 import os
 import logging
+import re
 from django.core.cache import cache
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -7,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.conf import settings
+from django.utils import timezone
 
 from google.oauth2 import id_token
 from google.auth.transport.requests import Request
@@ -51,6 +53,76 @@ def clear_auth_cookies(response: Response):
 def issue_tokens_for_user(user: CustomUser):
     refresh = RefreshToken.for_user(user)
     return str(refresh.access_token), str(refresh)
+
+
+def get_client_ip(request):
+    x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+    if x_forwarded_for:
+        return x_forwarded_for.split(",")[0].strip()
+    return request.META.get("HTTP_X_REAL_IP") or request.META.get("REMOTE_ADDR", "")
+
+
+def parse_user_agent(user_agent: str):
+    ua = (user_agent or "").lower()
+
+    if "edg/" in ua:
+        browser = "Edge"
+    elif "opr/" in ua or "opera" in ua:
+        browser = "Opera"
+    elif "chrome/" in ua and "edg/" not in ua:
+        browser = "Chrome"
+    elif "safari/" in ua and "chrome/" not in ua:
+        browser = "Safari"
+    elif "firefox/" in ua:
+        browser = "Firefox"
+    elif "trident/" in ua or "msie" in ua:
+        browser = "Internet Explorer"
+    else:
+        browser = "Unknown Browser"
+
+    if "windows" in ua:
+        os_name = "Windows"
+    elif "mac os x" in ua or "macintosh" in ua:
+        os_name = "macOS"
+    elif "android" in ua:
+        os_name = "Android"
+    elif "iphone" in ua or "ipad" in ua or "ios" in ua:
+        os_name = "iOS"
+    elif "linux" in ua:
+        os_name = "Linux"
+    else:
+        os_name = "Unknown OS"
+
+    mobile_pattern = re.compile(r"mobile|iphone|ipad|android")
+    device_name = "Mobile Device" if mobile_pattern.search(ua) else "Desktop Device"
+
+    return {
+        "browser": browser,
+        "os": os_name,
+        "device_name": device_name,
+    }
+
+
+def build_login_email_payload(request, user: CustomUser, login_method: str):
+    user_agent = request.META.get("HTTP_USER_AGENT", "")
+    ua_data = parse_user_agent(user_agent)
+    login_time = timezone.now().strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    return {
+        "email": user.email,
+        "first_name": getattr(user, "first_name", "") or "User",
+        "login_time": login_time,
+        "login_ip": get_client_ip(request),
+        "login_location": "",  # Fill if you add GeoIP lookup later
+        "device_name": ua_data["device_name"],
+        "browser": ua_data["browser"],
+        "os": ua_data["os"],
+        "login_method": login_method,
+        "session_id": "",
+        "dashboard_url": "https://docugyan.com",
+        "secure_account_url": "https://docugyan.com/security",
+        "support_url": "https://docugyan.com/support",
+    }
 
 # -------------------------
 # Views
@@ -104,7 +176,9 @@ class OtpVerificationView(APIView):
         set_auth_cookies(response, access_token, refresh_token)
 
         try:
-            send_login_success_email.delay({"email": user.email, "first_name": getattr(user, 'first_name', '')})
+            send_login_success_email.delay(
+                build_login_email_payload(request, user, login_method="OTP")
+            )
         except Exception as e:
             logger.warning("Email send failed for %s: %s", user.email, str(e))
 
@@ -209,7 +283,9 @@ class Google_Login_SignupView(APIView):
         set_auth_cookies(response, access_token, refresh_token)
 
         try:
-            send_login_success_email.delay({"email": user.email, "first_name": getattr(user, 'first_name', '')})
+            send_login_success_email.delay(
+                build_login_email_payload(request, user, login_method="Google OAuth")
+            )
         except Exception as e:
             logger.warning("Async email enqueue failed for %s: %s", email, e)
 

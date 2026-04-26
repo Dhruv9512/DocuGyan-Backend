@@ -1,0 +1,566 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="x-apple-disable-message-reformatting" />
+    <meta name="format-detection" content="telephone=no,date=no,address=no,email=no" />
+    <title>DocuGyan — Verification Code</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@600&display=swap');
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0; padding: 0;
+        background-color: #06070d;
+        font-family: 'Plus Jakarta Sans', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        -webkit-text-size-adjust: 100%;
+        -ms-text-size-adjust: 100%;
+      }
+
+      table { border-spacing: 0; border-collapse: collapse; }
+      img { border: 0; outline: none; text-decoration: none; display: block; }
+
+      /* ─── PREHEADER ─── */
+      .preheader {
+        display: none; visibility: hidden; opacity: 0; color: transparent;
+        height: 0; width: 0; overflow: hidden; mso-hide: all;
+      }
+
+      /* ─── OUTER WRAPPER ─── */
+      .outer {
+        width: 100%;
+        background: #06070d;
+        padding: 36px 16px;
+      }
+
+      /* ─── CARD ─── */
+      .card {
+        width: 100%;
+        max-width: 600px;
+        border-radius: 24px;
+        overflow: hidden;
+        border: 1px solid #191e2e;
+        background: #0b0d18;
+      }
+
+      /* ─── TOP BAR ─── */
+      .top-bar {
+        padding: 20px 32px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid #12172200;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+      }
+      .brand-icon {
+        width: 32px; height: 32px;
+        border-radius: 9px;
+        background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .brand-name {
+        font-size: 15px;
+        font-weight: 700;
+        color: #e4ecff;
+        letter-spacing: -0.01em;
+      }
+
+      .badge-otp {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 5px 12px;
+        border-radius: 999px;
+        background: rgba(139, 92, 246, 0.1);
+        border: 1px solid rgba(139, 92, 246, 0.28);
+      }
+      .badge-dot {
+        width: 6px; height: 6px;
+        border-radius: 50%;
+        background: #a78bfa;
+        box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.2);
+      }
+      .badge-label {
+        font-size: 10px;
+        font-weight: 700;
+        color: #a78bfa;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      /* ─── HERO ─── */
+      .hero {
+        padding: 28px 32px 0;
+        display: flex;
+        align-items: flex-end;
+        gap: 0;
+      }
+      .hero-text { flex: 1; padding-bottom: 28px; }
+
+      .hero-eyebrow {
+        font-size: 10px;
+        font-weight: 700;
+        color: #353f5c;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        margin-bottom: 10px;
+      }
+      .hero-heading {
+        font-size: 28px;
+        font-weight: 700;
+        color: #ecf2ff;
+        line-height: 1.2;
+        letter-spacing: -0.025em;
+        margin: 0 0 12px;
+      }
+      .hero-heading span {
+        background: linear-gradient(90deg, #a78bfa 0%, #60a5fa 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      .hero-sub {
+        font-size: 14px;
+        color: #525e82;
+        line-height: 1.7;
+        margin: 0;
+        max-width: 300px;
+      }
+
+      /* Decorative key SVG */
+      .hero-art {
+        width: 110px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        padding-bottom: 0;
+      }
+
+      /* ─── ACCENT STRIP ─── */
+      .accent-strip {
+        height: 3px;
+        background: linear-gradient(90deg, #8b5cf6 0%, #3b82f6 55%, transparent 100%);
+      }
+
+      /* ─── BODY ─── */
+      .body-pad { padding: 28px 32px; }
+
+      .greeting {
+        font-size: 14px;
+        color: #5e6e96;
+        line-height: 1.7;
+        margin: 0 0 26px;
+      }
+      .greeting strong { color: #aabbd8; font-weight: 600; }
+
+      /* ─── OTP DISPLAY ─── */
+      .otp-wrapper {
+        text-align: center;
+        margin-bottom: 22px;
+      }
+      .otp-label {
+        font-size: 10px;
+        font-weight: 700;
+        color: #2e3856;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        margin-bottom: 16px;
+      }
+
+      .otp-box {
+        display: inline-block;
+        background: #0d1020;
+        border: 1px solid #242d47;
+        border-radius: 16px;
+        padding: 24px 36px;
+        position: relative;
+      }
+      /* corner accents */
+      .otp-box::before,
+      .otp-box::after {
+        content: '';
+        position: absolute;
+        width: 16px; height: 16px;
+        border-color: rgba(139,92,246,0.35);
+        border-style: solid;
+      }
+      .otp-box::before {
+        top: -1px; left: -1px;
+        border-width: 2px 0 0 2px;
+        border-radius: 4px 0 0 0;
+      }
+      .otp-box::after {
+        bottom: -1px; right: -1px;
+        border-width: 0 2px 2px 0;
+        border-radius: 0 0 4px 0;
+      }
+
+      .otp-digits {
+        font-family: 'JetBrains Mono', 'Courier New', monospace;
+        font-size: 42px;
+        font-weight: 600;
+        color: #e8f0ff;
+        letter-spacing: 0.22em;
+        line-height: 1;
+        margin: 0;
+        /* prevent email clients converting to phone link */
+        text-decoration: none;
+        display: block;
+      }
+      .otp-sub {
+        font-size: 12px;
+        color: #333e5c;
+        margin-top: 10px;
+        letter-spacing: 0.01em;
+      }
+      .otp-sub span { color: #f59e0b; font-weight: 600; }
+
+      /* ─── DIVIDER ─── */
+      .soft-divider {
+        height: 1px;
+        background: #111623;
+        margin: 4px 0 22px;
+      }
+
+      /* ─── INFO ROWS ─── */
+      .info-grid {
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid #151b2a;
+        margin-bottom: 22px;
+      }
+      .info-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 11px 14px;
+        border-bottom: 1px solid #111623;
+      }
+      .info-row:last-child { border-bottom: 0; }
+      .info-row:nth-child(even) { background: rgba(255,255,255,0.012); }
+
+      .info-icon {
+        width: 28px; height: 28px;
+        border-radius: 7px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(59,130,246,0.07);
+        border: 1px solid rgba(59,130,246,0.1);
+      }
+      .info-label { flex: 1; font-size: 12px; font-weight: 500; color: #3e4d72; }
+      .info-value { font-size: 12px; font-weight: 600; color: #c0ceeb; }
+      .info-value.green { color: #34d399; }
+      .info-value.red { color: #f87171; }
+
+      /* ─── WARNING BOX ─── */
+      .warn-box {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        background: rgba(239,68,68,0.05);
+        border: 1px solid rgba(239,68,68,0.15);
+        border-left: 3px solid #dc2626;
+        border-radius: 12px;
+        padding: 14px 16px;
+      }
+      .warn-icon-wrap {
+        width: 30px; height: 30px;
+        flex-shrink: 0;
+        border-radius: 8px;
+        background: rgba(239,68,68,0.08);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .warn-content .warn-title {
+        font-size: 12px; font-weight: 700; color: #f87171; margin: 0 0 3px;
+      }
+      .warn-content .warn-body {
+        font-size: 12px; color: #5e3535; line-height: 1.6; margin: 0;
+      }
+
+      /* ─── FOOTER DIVIDER ─── */
+      .footer-divider { height: 1px; background: #0e1220; }
+
+      /* ─── FOOTER ─── */
+      .footer {
+        padding: 16px 32px 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .footer-left { font-size: 11px; color: #232c44; line-height: 1.5; }
+      .footer-right { font-size: 11px; }
+      .footer-right a { color: #2f4068 !important; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
+
+      /* ─── MSO FALLBACK ─── */
+      .mso-otp-fallback {
+        display: none;
+        mso-hide: all;
+      }
+
+      /* ─── RESPONSIVE ─── */
+      @media only screen and (max-width: 620px) {
+        .outer { padding: 16px 8px !important; }
+        .card { border-radius: 18px !important; }
+        .top-bar { padding: 16px 20px !important; }
+        .hero { padding: 20px 20px 0 !important; }
+        .hero-art { display: none !important; }
+        .hero-heading { font-size: 22px !important; }
+        .hero-sub { max-width: none !important; font-size: 13px !important; }
+        .body-pad { padding: 22px 20px !important; }
+        .otp-digits { font-size: 34px !important; letter-spacing: 0.18em !important; }
+        .otp-box { padding: 20px 24px !important; border-radius: 12px !important; }
+        .footer { padding: 14px 20px 16px !important; flex-direction: column !important; align-items: flex-start !important; gap: 6px !important; }
+        .info-row { flex-wrap: wrap !important; }
+        .info-value { font-size: 12px !important; }
+      }
+
+      @media only screen and (max-width: 400px) {
+        .otp-digits { font-size: 28px !important; letter-spacing: 0.14em !important; }
+        .brand-name { font-size: 13px !important; }
+      }
+    </style>
+  </head>
+  <body>
+
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#06070d;padding:36px 16px;" class="outer">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;border-radius:24px;overflow:hidden;border:1px solid #191e2e;background:#0b0d18;" class="card">
+
+            <!-- ═══ TOP BAR ═══ -->
+            <tr>
+              <td style="padding:20px 32px;border-bottom:1px solid #111722;" class="top-bar">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td>
+                      <!-- Brand -->
+                      <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="display:inline-table;">
+                        <tr>
+                          <td style="vertical-align:middle;padding-right:9px;">
+                            <div style="width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#8b5cf6,#3b82f6);display:flex;align-items:center;justify-content:center;">
+                               <svg xmlns="http://www.w3.org/2000/svg" height="16px" viewBox="0 -960 960 960" width="16px" fill="#e3e3e3"><path d="M155-75q-35-35-35-85t35-85q35-35 85-35 14 0 26 3t23 8l57-71q-28-31-39-70t-5-78l-81-27q-17 25-43 40t-58 15q-50 0-85-35T0-580q0-50 35-85t85-35q50 0 85 35t35 85v8l81 28q20-36 53.5-61t75.5-32v-87q-39-11-64.5-42.5T360-840q0-50 35-85t85-35q50 0 85 35t35 85q0 42-26 73.5T510-724v87q42 7 75.5 32t53.5 61l81-28v-8q0-50 35-85t85-35q50 0 85 35t35 85q0 50-35 85t-85 35q-32 0-58.5-15T739-515l-81 27q6 39-5 77.5T614-340l57 70q11-5 23-7.5t26-2.5q50 0 85 35t35 85q0 50-35 85t-85 35q-50 0-85-35t-35-85q0-20 6.5-38.5T624-232l-57-71q-41 23-87.5 23T392-303l-56 71q11 15 17.5 33.5T360-160q0 50-35 85t-85 35q-50 0-85-35Zm-35-465q17 0 28.5-11.5T160-580q0-17-11.5-28.5T120-620q-17 0-28.5 11.5T80-580q0 17 11.5 28.5T120-540Zm148.5 408.5Q280-143 280-160t-11.5-28.5Q257-200 240-200t-28.5 11.5Q200-177 200-160t11.5 28.5Q223-120 240-120t28.5-11.5Zm240-680Q520-823 520-840t-11.5-28.5Q497-880 480-880t-28.5 11.5Q440-857 440-840t11.5 28.5Q463-800 480-800t28.5-11.5ZM480-360q42 0 71-29t29-71q0-42-29-71t-71-29q-42 0-71 29t-29 71q0 42 29 71t71 29Zm268.5 228.5Q760-143 760-160t-11.5-28.5Q737-200 720-200t-28.5 11.5Q680-177 680-160t11.5 28.5Q703-120 720-120t28.5-11.5Zm120-420Q880-563 880-580t-11.5-28.5Q857-620 840-620t-28.5 11.5Q800-597 800-580t11.5 28.5Q823-540 840-540t28.5-11.5ZM480-840ZM120-580Zm360 120Zm360-120ZM240-160Zm480 0Z"/></svg>
+                    </div>
+                          </td>
+                          <td style="vertical-align:middle;">
+                            <span style="font-size:15px;font-weight:700;color:#e4ecff;letter-spacing:-0.01em;">DocuGyan</span>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                    <td align="right">
+                      <!-- Badge -->
+                      <span style="display:inline-block;padding:5px 12px;border-radius:999px;background:rgba(139,92,246,0.1);border:1px solid rgba(139,92,246,0.28);">
+                        <span style="font-size:10px;font-weight:700;color:#a78bfa;letter-spacing:0.08em;text-transform:uppercase;">Verification Code</span>
+                      </span>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- ═══ HERO ═══ -->
+            <tr>
+              <td style="padding:28px 32px 0;background:#0b0d18;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td style="vertical-align:bottom;padding-bottom:26px;">
+                      <p style="font-size:10px;font-weight:700;color:#353f5c;letter-spacing:0.12em;text-transform:uppercase;margin:0 0 10px;">Identity Verification</p>
+                      <h1 style="font-size:26px;font-weight:700;color:#ecf2ff;line-height:1.2;letter-spacing:-0.025em;margin:0 0 12px;">
+                        One-time code<br>
+                        <span style="background:linear-gradient(90deg,#a78bfa,#60a5fa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">for your account</span>
+                      </h1>
+                      <p style="font-size:13px;color:#525e82;line-height:1.7;margin:0;max-width:300px;">Use this code to verify your identity. It expires in 10 minutes and can only be used once.</p>
+                    </td>
+                    <!-- Shield art - hides on mobile via media query trick using max-width inline -->
+                    <td style="vertical-align:bottom;width:110px;text-align:center;" class="hero-art">
+                      <svg width="95" height="118" viewBox="0 0 110 130" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:block;">
+                        <ellipse cx="55" cy="115" rx="34" ry="7" fill="rgba(139,92,246,0.1)"/>
+                        <path d="M55 8 L92 22 L92 58 C92 83 73 102 55 114 C37 102 18 83 18 58 L18 22 Z" fill="rgba(139,92,246,0.07)" stroke="url(#kg)" stroke-width="1.5"/>
+                        <path d="M55 19 L84 31 L84 58 C84 79 68 96 55 106 C42 96 26 79 26 58 L26 31 Z" fill="rgba(59,130,246,0.04)" stroke="rgba(99,102,241,0.18)" stroke-width="1"/>
+                        <!-- Key icon in center -->
+                        <circle cx="55" cy="64" r="20" fill="rgba(139,92,246,0.08)" stroke="rgba(139,92,246,0.22)" stroke-width="1.5"/>
+                        <!-- Key shape -->
+                        <circle cx="50" cy="60" r="7" stroke="#a78bfa" stroke-width="2" fill="none"/>
+                        <circle cx="50" cy="60" r="3.5" fill="rgba(167,139,250,0.25)"/>
+                        <line x1="57" y1="60" x2="68" y2="60" stroke="#a78bfa" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="65" y1="60" x2="65" y2="65" stroke="#a78bfa" stroke-width="2" stroke-linecap="round"/>
+                        <line x1="61" y1="60" x2="61" y2="63.5" stroke="#a78bfa" stroke-width="2" stroke-linecap="round"/>
+                        <!-- Stars/sparkles -->
+                        <circle cx="36" cy="32" r="1.5" fill="#8b5cf6" opacity="0.5"/>
+                        <circle cx="74" cy="28" r="1" fill="#3b82f6" opacity="0.4"/>
+                        <circle cx="79" cy="80" r="1.5" fill="#a78bfa" opacity="0.35"/>
+                        <defs>
+                          <linearGradient id="kg" x1="18" y1="8" x2="92" y2="114" gradientUnits="userSpaceOnUse">
+                            <stop offset="0%" stop-color="#8b5cf6"/>
+                            <stop offset="100%" stop-color="#3b82f6"/>
+                          </linearGradient>
+                        </defs>
+                      </svg>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Accent strip -->
+            <tr>
+              <td style="height:3px;background:linear-gradient(90deg,#8b5cf6 0%,#3b82f6 55%,transparent 100%);padding:0;"></td>
+            </tr>
+
+            <!-- ═══ BODY ═══ -->
+            <tr>
+              <td style="padding:28px 32px;" class="body-pad">
+
+                <!-- Greeting -->
+                <p style="font-size:14px;color:#5e6e96;line-height:1.7;margin:0 0 26px;">
+                  Hi <strong style="color:#aabbd8;font-weight:600;">{{ first_name }}</strong>, here is your one-time verification code for DocuGyan. Enter it within 10 minutes to complete your request.
+                </p>
+
+                <!-- OTP block -->
+                <p style="font-size:10px;font-weight:700;color:#2e3856;letter-spacing:0.12em;text-transform:uppercase;margin:0 0 14px;text-align:center;">Your verification code</p>
+
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-bottom:22px;">
+                  <tr>
+                    <td align="center">
+                      <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                        <tr>
+                          <td style="background:#0d1020;border:1px solid #242d47;border-radius:16px;padding:22px 40px;text-align:center;">
+                            <!-- OTP digits - mso-safe -->
+                            <p style="font-family:'JetBrains Mono','Courier New',monospace;font-size:42px;font-weight:700;color:#e8f0ff;letter-spacing:0.22em;line-height:1;margin:0;mso-font-alt:'Courier New';">{{ otp }}</p>
+                            <p style="font-size:12px;color:#323e5e;margin:10px 0 0;letter-spacing:0.01em;">Expires in <span style="color:#f59e0b;font-weight:600;">10 minutes</span></p>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+
+                <!-- Soft divider -->
+                <div style="height:1px;background:#111623;margin:4px 0 22px;"></div>
+
+                <!-- Info rows -->
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-radius:12px;overflow:hidden;border:1px solid #151b2a;margin-bottom:22px;">
+                  <tr style="background:rgba(255,255,255,0);">
+                    <td style="padding:11px 14px;border-bottom:1px solid #111623;">
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                        <tr>
+                          <td style="width:28px;vertical-align:middle;padding-right:10px;">
+                            <div style="width:28px;height:28px;border-radius:7px;background:rgba(59,130,246,0.07);border:1px solid rgba(59,130,246,0.1);display:flex;align-items:center;justify-content:center;">
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="display:block;margin:auto;">
+                                <circle cx="12" cy="12" r="9" stroke="#60a5fa" stroke-width="1.8"/>
+                                <polyline points="12 7 12 12 15 14" stroke="#60a5fa" stroke-width="1.8" stroke-linecap="round"/>
+                              </svg>
+                            </div>
+                          </td>
+                          <td style="font-size:12px;font-weight:500;color:#3e4d72;">Valid for</td>
+                          <td align="right" style="font-size:12px;font-weight:600;color:#f59e0b;">10 minutes only</td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                  <tr style="background:rgba(255,255,255,0.012);">
+                    <td style="padding:11px 14px;border-bottom:1px solid #111623;">
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                        <tr>
+                          <td style="width:28px;vertical-align:middle;padding-right:10px;">
+                            <div style="width:28px;height:28px;border-radius:7px;background:rgba(59,130,246,0.07);border:1px solid rgba(59,130,246,0.1);display:flex;align-items:center;justify-content:center;">
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="display:block;margin:auto;">
+                                <path d="M3 12h18M3 6h18M3 18h18" stroke="#60a5fa" stroke-width="1.8" stroke-linecap="round"/>
+                              </svg>
+                            </div>
+                          </td>
+                          <td style="font-size:12px;font-weight:500;color:#3e4d72;">Single use</td>
+                          <td align="right" style="font-size:12px;font-weight:600;color:#34d399;">One-time only</td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:11px 14px;">
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                        <tr>
+                          <td style="width:28px;vertical-align:middle;padding-right:10px;">
+                            <div style="width:28px;height:28px;border-radius:7px;background:rgba(59,130,246,0.07);border:1px solid rgba(59,130,246,0.1);display:flex;align-items:center;justify-content:center;">
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="display:block;margin:auto;">
+                                <rect x="3" y="11" width="18" height="11" rx="2" stroke="#60a5fa" stroke-width="1.8"/>
+                                <path d="M7 11V7a5 5 0 0 1 10 0v4" stroke="#60a5fa" stroke-width="1.8" stroke-linecap="round"/>
+                              </svg>
+                            </div>
+                          </td>
+                          <td style="font-size:12px;font-weight:500;color:#3e4d72;">Keep private</td>
+                          <td align="right" style="font-size:12px;font-weight:600;color:#c0ceeb;">Never share this code</td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+
+                <!-- Warning box -->
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-radius:12px;overflow:hidden;border:1px solid rgba(239,68,68,0.15);border-left:3px solid #dc2626;background:rgba(239,68,68,0.05);">
+                  <tr>
+                    <td style="padding:14px 16px;">
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                        <tr>
+                          <td style="width:30px;vertical-align:top;padding-right:12px;padding-top:2px;">
+                            <div style="width:30px;height:30px;border-radius:8px;background:rgba(239,68,68,0.08);display:flex;align-items:center;justify-content:center;">
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="display:block;margin:auto;">
+                                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" stroke="#f87171" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                                <line x1="12" y1="9" x2="12" y2="13" stroke="#f87171" stroke-width="1.8" stroke-linecap="round"/>
+                                <circle cx="12" cy="17" r="0.8" fill="#f87171"/>
+                              </svg>
+                            </div>
+                          </td>
+                          <td style="vertical-align:top;">
+                            <p style="font-size:12px;font-weight:700;color:#f87171;margin:0 0 3px;">Didn't request this?</p>
+                            <p style="font-size:12px;color:#5e3535;line-height:1.6;margin:0;">If you didn't request this code, your account may be at risk. Secure your account immediately and contact our support team.</p>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+
+              </td>
+            </tr>
+
+            <!-- ═══ FOOTER ═══ -->
+            <tr>
+              <td style="height:1px;background:#0e1220;"></td>
+            </tr>
+            <tr>
+              <td style="padding:16px 32px 20px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td style="font-size:11px;color:#232c44;line-height:1.5;">
+                      © DocuGyan &middot; Secure workspace for documents &amp; AI
+                    </td>
+                    <td align="right" style="font-size:11px;white-space:nowrap;">
+                      <a href="{{ support_url }}" target="_blank" rel="noopener noreferrer" style="color:#2f4068 !important;text-decoration:underline;text-underline-offset:2px;">Contact Support</a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
+    </table>
+
+  </body>
+</html>
