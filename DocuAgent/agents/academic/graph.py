@@ -87,14 +87,27 @@ class QuestionWorkerGraph:
         try:
             result = build_CorrectiveRetriever(
                 project_id=state["project_id"],
-                search_queries=state["original_question"],
+                search_queries=state["original_question"],  
             )
 
             references_seen = set()
+            doc_references = []
+            web_references = []
             for doc in result.get("retrieved_docs", []):
                 source_url = doc.metadata.get("source_url", "")
-                if source_url and source_url not in references_seen:
-                    references_seen.add(source_url)
+                doc_type   = doc.metadata.get("chunk_type", "reference") 
+                page_num   = doc.metadata.get("page_number", "")
+
+                if not source_url or source_url in references_seen:
+                    continue
+
+                references_seen.add(source_url)
+
+                if doc_type == "web":
+                    web_references.append(source_url)
+                else:
+                    label = f"{source_url} (Page {page_num})" if page_num else source_url
+                    doc_references.append(label)
 
             return {
                 "retrieved_docs": result.get("retrieved_docs", []),
@@ -275,7 +288,7 @@ class QuestionWorkerGraph:
         retrieved_references = state.get("retrieved_references", [])
         if retrieved_references:
             draft += "\n\n---\n\n### References\n"
-            draft += "\n".join(f"- {url}" for url in retrieved_references)
+            draft += "\n".join(f"- {r}" for r in retrieved_references)
 
         return {"completed_answers": [f"### {clean_question}\n\n{draft.strip()}\n\n---"]}
 

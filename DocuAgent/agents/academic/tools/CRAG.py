@@ -185,7 +185,7 @@ class CorrectiveRetriever:
             return [
                 Document(
                     page_content=r.get("content", ""),
-                    metadata={"source_url": r.get("url", "web"), "title": r.get("title", ""), "type": "web"}
+                    metadata={"source_url": r.get("url", "web"), "title": r.get("title", ""), "chunk_type": "web"}
                 ) for r in raw_results if r.get("content")
             ]
         except Exception as exc:
@@ -194,7 +194,7 @@ class CorrectiveRetriever:
                 f"Academic Agent: Web search failed: {exc}",
                 current_node="academic",
             )
-            return [Document(page_content="Web search unavailable.", metadata={"source_url": "fallback", "type": "error"})]
+            return [Document(page_content="Web search unavailable.", metadata={"source_url": "fallback", "chunk_type": "error"})]
 
 # ================================================================
 # Builder Function
