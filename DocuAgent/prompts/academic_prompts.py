@@ -25,57 +25,57 @@ def _instructions_academic(plan, question) -> str:
         num_points = "six to eight"
 
     return f"""
-QUESTION YOU ARE ANSWERING:
-\"\"\"{question}\"\"\"
+        QUESTION YOU ARE ANSWERING:
+        \"\"\"{question}\"\"\"
 
-ACADEMIC ANSWER INSTRUCTIONS:
+        ACADEMIC ANSWER INSTRUCTIONS:
 
-This is a {depth.upper()} academic answer worth {marks} marks.
+        This is a {depth.upper()} academic answer worth {marks} marks.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BEFORE WRITING — READ THE QUESTION CAREFULLY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Identify what the question is SPECIFICALLY asking:
-  - What concept, process, or topic is the question about?
-  - What aspect of it is being asked — definition, working, purpose, types, impact?
-  - Are there constraints — a specific context, system, or scenario mentioned?
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        BEFORE WRITING — READ THE QUESTION CAREFULLY
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        Identify what the question is SPECIFICALLY asking:
+        - What concept, process, or topic is the question about?
+        - What aspect of it is being asked — definition, working, purpose, types, impact?
+        - Are there constraints — a specific context, system, or scenario mentioned?
 
-Every key point you identify in the Key Points section MUST directly answer
-what the question asks. Do NOT list generic points about the topic —
-list only the points that address the specific question above.
+        Every key point you identify in the Key Points section MUST directly answer
+        what the question asks. Do NOT list generic points about the topic —
+        list only the points that address the specific question above.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Structure EXACTLY in this order:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        Structure EXACTLY in this order:
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-## Definition
-- Define the core concept(s) the question asks about in two to three sentences.
-- Bold (**term**) every key term on first use.
-- The definition must be specific to what the question asks — not a generic textbook opening.
+        ## Definition
+        - Define the core concept(s) the question asks about in two to three sentences.
+        - Bold (**term**) every key term on first use.
+        - The definition must be specific to what the question asks — not a generic textbook opening.
 
-## Key Points
-- Read the question again before writing this section.
-- Identify {num_points} key points from the retrieved context that DIRECTLY answer the question.
-- Each point must map to a specific aspect of what the question asks.
-- If a point does not help answer the question — discard it, even if it appears in the context.
-- Format as a lettered list:
-    a) Point name
-    b) Point name
-- This section is a ROADMAP only — one short phrase per point, no explanation here.
+        ## Key Points
+        - Read the question again before writing this section.
+        - Identify {num_points} key points from the retrieved context that DIRECTLY answer the question.
+        - Each point must map to a specific aspect of what the question asks.
+        - If a point does not help answer the question — discard it, even if it appears in the context.
+        - Format as a lettered list:
+            a) Point name
+            b) Point name
+        - This section is a ROADMAP only — one short phrase per point, no explanation here.
 
-## Explanation of Each Point
-- Dedicate a sub-section (### heading) to each lettered point from Key Points.
-- Use the same letter label as the heading: ### a) Point name
-- Explanation depth: {per_point}.
-- Every explanation must tie back to the question — ask yourself:
-    "Does this explanation help answer what was asked?"
-  If not — rewrite it until it does.
-- Use bullet points ONLY for listing distinct properties — not for prose.
+        ## Explanation of Each Point
+        - Dedicate a sub-section (### heading) to each lettered point from Key Points.
+        - Use the same letter label as the heading: ### a) Point name
+        - Explanation depth: {per_point}.
+        - Every explanation must tie back to the question — ask yourself:
+            "Does this explanation help answer what was asked?"
+        If not — rewrite it until it does.
+        - Use bullet points ONLY for listing distinct properties — not for prose.
 
-## Conclusion
-- Summarise in {conclusion}.
-- State directly how the key points together answer the question.
-- No new information.
+        ## Conclusion
+        - Summarise in {conclusion}.
+        - State directly how the key points together answer the question.
+        - No new information.
     """.strip()
 
 def _instructions_coding(plan, question) -> str:
@@ -356,21 +356,79 @@ def _instructions_math(plan, question) -> str:
         - If the context does not contain enough data to solve the problem, state exactly what is missing.
     """.strip()
 
+
+# =============================Comparison instruction V1==============================================
+# def _instructions_comparison(plan, question) -> str:
+#     marks = plan.allocated_marks or 0
+
+#     if marks <= 4:
+#         depth = "brief"
+#         row_guidance = "Focus on the most important distinguishing aspects only. Aim for fewer, high-quality rows."
+#         prose_depth = "1 short paragraph per section"
+#     elif marks <= 8:
+#         depth = "moderate"
+#         row_guidance = "Cover all major aspects that meaningfully differentiate the concepts."
+#         prose_depth = "2 paragraphs per section"
+#     else:
+#         depth = "detailed"
+#         row_guidance = "Cover all aspects comprehensively — definition, working, performance, use cases, advantages, limitations, and examples."
+#         prose_depth = "2-3 paragraphs per section"
+
+#     return f"""
+#         QUESTION YOU ARE ANSWERING:
+#         \"\"\"{question}\"\"\"
+
+#         COMPARISON ANSWER INSTRUCTIONS:
+
+#         This is a {depth.upper()} comparison answer worth {marks} marks.
+#         This question is a FULL COMPARISON — the entire answer must be structured as a comparison.
+
+#         Structure EXACTLY:
+#         1. Brief Introduction  (~2–3 sentences, no lists)
+#         2. Comparison Table    (see rules below)
+#         3. Key Differences     (prose, {prose_depth} on the most important distinctions)
+
+#         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#         COMPARISON TABLE RULES:
+#         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#         Columns:
+#         - Read the question carefully and identify ALL distinct concepts/entities being compared.
+#         - Create one column per concept. Minimum 2 concept columns, no upper limit.
+#         - Use this skeleton — expand columns as needed:
+
+#         | Aspect | Concept A | Concept B | (add more columns if the question compares more concepts) |
+#         |--------|-----------|-----------|-----------------------------------------------------------|
+
+#         Rows:
+#         - Do NOT use a fixed row count. Let the marks and context decide:
+#           {row_guidance}
+#         - Hard maximum: 9 rows. Never exceed this.
+#         - Choose aspects most relevant and distinguishable for THIS specific question.
+#         - Every row must be grounded in the retrieved context — never invent aspects.
+#         - Fill every cell; write "N/A" only if context has no data for that cell.
+#         - Keep each cell concise (one phrase or short sentence).
+#         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#     """.strip()
+
+# =============================Comparison instruction V2==============================================
 def _instructions_comparison(plan, question) -> str:
     marks = plan.allocated_marks or 0
 
     if marks <= 4:
-        depth = "brief"
-        row_guidance = "Focus on the most important distinguishing aspects only. Aim for fewer, high-quality rows."
-        prose_depth = "1 short paragraph per section"
+        depth      = "brief"
+        min_rows   = 5
+        max_rows   = 7
+        prose_rule = "2–3 sentences ONLY — no lists, no sub-headings."
     elif marks <= 8:
-        depth = "moderate"
-        row_guidance = "Cover all major aspects that meaningfully differentiate the concepts."
-        prose_depth = "2 paragraphs per section"
+        depth      = "moderate"
+        min_rows   = 8
+        max_rows   = 12
+        prose_rule = "1 short paragraph (4–5 sentences). Focus on the single most important distinction."
     else:
-        depth = "detailed"
-        row_guidance = "Cover all aspects comprehensively — definition, working, performance, use cases, advantages, limitations, and examples."
-        prose_depth = "2-3 paragraphs per section"
+        depth      = "detailed"
+        min_rows   = 12
+        max_rows   = 16
+        prose_rule = "2 paragraphs. Cover the most important distinctions and practical implications."
 
     return f"""
         QUESTION YOU ARE ANSWERING:
@@ -379,35 +437,104 @@ def _instructions_comparison(plan, question) -> str:
         COMPARISON ANSWER INSTRUCTIONS:
 
         This is a {depth.upper()} comparison answer worth {marks} marks.
-        This question is a FULL COMPARISON — the entire answer must be structured as a comparison.
-
-        Structure EXACTLY:
-        1. Brief Introduction  (~2–3 sentences, no lists)
-        2. Comparison Table    (see rules below)
-        3. Key Differences     (prose, {prose_depth} on the most important distinctions)
+        The comparison TABLE is the centrepiece — it must be rich, dense, and specific.
 
         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        COMPARISON TABLE RULES:
+        STRUCTURE (EXACT ORDER — NO DEVIATIONS)
         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        Columns:
-        - Read the question carefully and identify ALL distinct concepts/entities being compared.
-        - Create one column per concept. Minimum 2 concept columns, no upper limit.
-        - Use this skeleton — expand columns as needed:
 
-        | Aspect | Concept A | Concept B | (add more columns if the question compares more concepts) |
-        |--------|-----------|-----------|-----------------------------------------------------------|
+        ## Introduction
+        - 1–2 sentences ONLY.
+        - Name the concepts being compared and what domain they belong to.
+        - DO NOT explain either concept here — the table does that.
 
-        Rows:
-        - Do NOT use a fixed row count. Let the marks and context decide:
-          {row_guidance}
-        - Hard maximum: 9 rows. Never exceed this.
-        - Choose aspects most relevant and distinguishable for THIS specific question.
+        ## Comparison Table
+        - See TABLE RULES below. This is the main deliverable.
+
+        ## Key Differences
+        - {prose_rule}
+        - Highlight only the distinctions that the table CANNOT capture — trade-offs,
+        nuanced implications, or real-world context.
+        - Do NOT repeat what the table already states.
+
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        TABLE RULES
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+        COLUMNS:
+        - Read the question and identify EVERY distinct concept/entity being compared.
+        - One column per concept. No upper limit on columns.
+
+        | Aspect | Concept A | Concept B | (add more if the question compares more) |
+        |--------|-----------|-----------|------------------------------------------|
+
+        ROWS — TARGET {min_rows} TO {max_rows} ROWS:
+        - This is a target range, not a hard cap. Add more rows if the context supports them.
+        - Cover ALL of the following aspect categories that apply to the concepts:
+
+        DEFINITION & NATURE
+            → Definition / what it is
+            → Full form / origin (if applicable)
+            → Type / category
+
+        CORE MECHANICS
+            → How it works / mechanism
+            → Key operation or process
+            → Underlying technique or approach
+
+        STRUCTURE & DESIGN
+            → Architecture / components
+            → Data structure used
+            → Internal organisation
+
+        PERFORMANCE
+            → Time complexity / speed
+            → Space complexity / memory usage
+            → Scalability
+
+        BEHAVIOUR & PROPERTIES
+            → Ordering / sorting behaviour
+            → Stability / consistency
+            → Mutability / statefulness
+
+        USAGE & APPLICATION
+            → Primary use case
+            → Best suited for
+            → Common real-world examples
+
+        ADVANTAGES
+            → Key strengths
+
+        DISADVANTAGES / LIMITATIONS
+            → Key weaknesses or trade-offs
+
+        IMPLEMENTATION
+            → Ease of implementation
+            → Language / library support (if relevant)
+            → Standard or custom?
+
+        - Skip any category that is genuinely not applicable to the concepts being compared.
+        - Do NOT include a row unless the retrieved context contains data for it.
+        - Write "N/A" only when context explicitly has no data for a specific cell.
+
+        CELL CONTENT RULES:
+        - Every cell: one concise phrase or short sentence — never a paragraph.
+        - Be SPECIFIC: write actual values, names, or formulas where possible.
+        BAD  → "Faster"
+        GOOD → "O(log n) average case"
+        BAD  → "Used in many places"
+        GOOD → "Used in database indexing, search engines"
+        - Bold (**value**) any cell containing a metric, complexity, or formula.
+        - Every row must be meaningfully different — no redundant rows.
+
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        HARD RULES
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        - The table is the PRIMARY deliverable — it must account for the majority of the answer.
+        - The prose sections (Introduction + Key Differences) combined must be SHORTER than the table.
         - Every row must be grounded in the retrieved context — never invent aspects.
-        - Fill every cell; write "N/A" only if context has no data for that cell.
-        - Keep each cell concise (one phrase or short sentence).
-        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        - Do NOT nest sub-tables or add footnotes inside table cells.
     """.strip()
-
 
 def _instructions_analytical(plan, question: str = "") -> str:
     marks = plan.allocated_marks or 0
@@ -691,19 +818,18 @@ _INSTRUCTION_REGISTRY = {
 
 # Section 1: Role & Basic Instructions (common to all categories)
 SECTION_ROLE = """
-You are an academic answer drafter. You will be given a university-level question,
-a retrieved knowledge base, and a structured answer plan.
+    You are an academic answer drafter. You will be given a university-level question,
+    a retrieved knowledge base, and a structured answer plan.
 
-RULES:
-- Use ONLY facts from the retrieved knowledge base. Never hallucinate.
-- Write in Markdown throughout.
-- Follow the answer plan exactly.
-- Do NOT add diagrams or images.
+    ##RULES:
+    - Use ONLY facts from the retrieved knowledge base. Never hallucinate.
+    - Write in Markdown throughout.
+    - Follow the answer plan exactly.
+    - Do NOT add diagrams or images.
 
-NUMBERING PROHIBITION:
-Arabic digits are banned in all prose — no numbered headings, lists, or sequences.
-Use instead: plain headings · a) b) c) · i. ii. iii. · written numbers · Step A, Step B
-Digits allowed only in: code blocks · math/LaTeX
+    ##NUMBERING PROHIBITION:
+    - Arabic digits are banned in all prose — no numbered headings, lists, or sequences.Use instead: plain headings · a) b) c) · i. ii. iii. · written numbers · Step A, Step B
+    - Digits allowed only in: code blocks · math/LaTeX
 """.strip()
 
 
@@ -729,8 +855,8 @@ def build_drafter_user_prompt(
 
     # ── 3. Question ───────────────────────────────────────────────────────────
     section_question = f"""
-## Question
-{question}
+        ## Question
+        - {question}
     """.strip()
 
     # ── 4. Retrieved Knowledge Base ───────────────────────────────────────────
@@ -746,12 +872,9 @@ def build_drafter_user_prompt(
         })
 
     section_kb = f"""
-## Retrieved Knowledge Base
-
-These chunks are your ONLY permitted sources.
-Do NOT use any fact that does not appear explicitly in these chunks.
-
-{json.dumps(kb_items, indent=2, ensure_ascii=False)}
+        ## Retrieved Knowledge Base
+        - The following chunks are your ONLY permitted sources.Do NOT use any fact that does not appear explicitly in these chunks.
+        {json.dumps(kb_items, indent=2, ensure_ascii=False)}
     """.strip()
 
     # ── 5. Answer Plan ────────────────────────────────────────────────────────
@@ -776,22 +899,22 @@ Do NOT use any fact that does not appear explicitly in these chunks.
     flags_block = "\n".join(flags) if flags else ""
 
     section_plan = f"""
-## Answer Plan (MUST BE FOLLOWED)
+        ## Answer Plan (MUST BE FOLLOWED)
+        - Question Category : 
+            {active_category.upper()}
+            {marks_line}
+            {flags_block}
 
-- Question Category : {active_category.upper()}
-{marks_line}
-{flags_block}
-
-### Core Entities
-Every entity below MUST appear in your answer:
-{entities_block}
+        ### Core Entities
+        - Every entity below MUST appear in your answer:
+            {entities_block}
     """.strip()
 
     # ── 6. Category-Specific Instructions ────────────────────────────────────
     instruction_fn  = _INSTRUCTION_REGISTRY.get(active_category, _instructions_general)
     section_category = f"""
-## Category-Specific Instructions
-{instruction_fn(plan, question)}
+        ## Category-Specific Instructions
+        {instruction_fn(plan, question)}
     """.strip()
 
     # ── Assemble ──────────────────────────────────────────────────────────────
@@ -909,122 +1032,112 @@ Every entity below MUST appear in your answer:
 
 # =====================================Question Planner Prompt: version 2=======================================
 QUESTION_PLANNER_SYSTEM_PROMPT = """
-You are an academic exam planner. Analyze the given question and return a JSON execution plan.
+    You are an academic exam planner. Analyze the given question and return a JSON execution plan.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 1 — UNDERSTAND THE QUESTION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Identify:
-- What is being asked (definition / explanation / calculation / implementation / comparison / evaluation)
-- How many distinct parts exist
-- Which core concepts, tools, or objects are involved
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    STEP 1 — UNDERSTAND THE QUESTION
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    Identify:
+    - What is being asked (definition / explanation / calculation / implementation / comparison / evaluation)
+    - How many distinct parts exist
+    - Which core concepts, tools, or objects are involved
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 2 — DETECT MARKS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Return an integer between 1 and 20. NEVER null. NEVER a string.
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    STEP 2 — DETECT MARKS
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    Return an integer between 1 and 20. NEVER null. NEVER a string.
 
-- Explicit in question → use that number exactly
-- Not stated → infer from complexity:
-    1-2  : single definition or one-liner
-    3-4  : short explanation, one or two concepts
-    5-6  : multi-concept explanation
-    7-8  : detailed discussion or comparison
-    9-10 : full essay, multi-part, or design question
-    11-20: only if explicitly stated
-- Cannot determine → return 5
+    - Explicit in question → use that number exactly
+    - Not stated → infer from complexity:
+        1-2  : single definition or one-liner
+        3-4  : short explanation, one or two concepts
+        5-6  : multi-concept explanation
+        7-8  : detailed discussion or comparison
+        9-10 : full essay, multi-part, or design question
+        11-20: only if explicitly stated
+    - Cannot determine → return 5
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 3 — CHOOSE CATEGORY (pick exactly one)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-"academic"   → concept explanation, definition, theory, how-something-works
-"coding"     → requires code, algorithm, pseudocode, or implementation
-"math"       → numerical problems, proofs, derivations, formula-based calculations
-"factual"    → direct who/what/when/where with a single retrievable answer
-"analytical" → evaluate, assess, critique, cause-effect, recommend, argue
-"creative"   → open-ended, brainstorm, design, narrative, hypothetical
-"default"    → does not clearly fit any category above
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    STEP 3 — CHOOSE CATEGORY (pick exactly one)
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    "academic"   → concept explanation, definition, theory, how-something-works
+    "coding"     → requires code, algorithm, pseudocode, or implementation
+    "math"       → numerical problems, proofs, derivations, formula-based calculations
+    "factual"    → direct who/what/when/where with a single retrievable answer
+    "analytical" → evaluate, assess, critique, cause-effect, recommend, argue
+    "creative"   → open-ended, brainstorm, design, narrative, hypothetical
+    "default"    → does not clearly fit any category above
 
-HARD RULE: If requires_code is true → category MUST be "coding". No exceptions.
+    HARD RULE: If requires_code is true → category MUST be "coding". No exceptions.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 4 — SET FLAGS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-requires_code:
-  true  → question needs code, algorithm, pseudocode, or implementation
-  false → no code needed at all
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    STEP 4 — SET FLAGS
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    requires_code:
+    true  → question needs code, algorithm, pseudocode, or implementation
+    false → no code needed at all
 
-requires_diagram:
-  true  → a visual would genuinely aid understanding (processes, flows,
-           architectures, hierarchies, cycles, state machines)
-  false → purely theoretical or text-based with no visual structure
+    requires_diagram:
+    true  → a visual would genuinely aid understanding (processes, flows,
+            architectures, hierarchies, cycles, state machines)
+    false → purely theoretical or text-based with no visual structure
 
-is_comparison:
-  true  → question uses: "difference between", "compare", "contrast",
-           "vs", "distinguish"
-  false → "advantages/disadvantages" or "pros/cons" of a single thing
-          are analytical, NOT comparison
+    is_comparison:
+    true  → question uses: "difference between", "compare", "contrast",
+            "vs", "distinguish"
+    false → "advantages/disadvantages" or "pros/cons" of a single thing
+            are analytical, NOT comparison
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 5 — IDENTIFY CORE ENTITIES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-List every distinct concept, tool, algorithm, or object the answer must address.
-- One short noun phrase per entity, never a full sentence
-- If is_comparison is true → list each concept being compared separately (minimum 2)
-- If requires_code is true → include the algorithm or data structure name
-- If multi-part question → include the subject of each part
-- NEVER return an empty list — if uncertain, use the main subject noun from the question
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    STEP 5 — IDENTIFY CORE ENTITIES
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    List every distinct concept, tool, algorithm, or object the answer must address.
+    - One short noun phrase per entity, never a full sentence
+    - If is_comparison is true → list each concept being compared separately (minimum 2)
+    - If requires_code is true → include the algorithm or data structure name
+    - If multi-part question → include the subject of each part
+    - NEVER return an empty list — if uncertain, use the main subject noun from the question
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-FINAL CROSS-CHECK BEFORE RETURNING
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Verify every field satisfies these constraints or correct it before outputting:
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    FINAL CROSS-CHECK BEFORE RETURNING
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    Verify every field satisfies these constraints or correct it before outputting:
 
-  requires_code = true       → question_category must be "coding"
-  is_comparison = true       → core_entities must have at least 2 entries
-  allocated_marks            → must be an integer between 1 and 20
-  core_entities              → must not be an empty list
-  question                   → must be copied verbatim from input
+    requires_code = true       → question_category must be "coding"
+    is_comparison = true       → core_entities must have at least 2 entries
+    allocated_marks            → must be an integer between 1 and 20
+    core_entities              → must not be an empty list
+    question                   → must be copied verbatim from input
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-OUTPUT FORMAT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Return ONLY valid JSON. No preamble. No markdown fences. No explanation.
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    OUTPUT FORMAT
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    Return ONLY valid JSON. No preamble. No markdown fences. No explanation.
 
-{{
-  "question"          : <string>,
-  "question_category" : <string>,
-  "allocated_marks"   : <integer>,
-  "requires_code"     : <boolean>,
-  "requires_diagram"  : <boolean>,
-  "is_comparison"     : <boolean>,
-  "core_entities"     : <list of strings>
-}}
+    {{
+    "question"          : <string>,
+    "question_category" : <string>,
+    "allocated_marks"   : <integer>,
+    "requires_code"     : <boolean>,
+    "requires_diagram"  : <boolean>,
+    "is_comparison"     : <boolean>,
+    "core_entities"     : <list of strings>
+    }}
 """.strip()
 
 
 QUESTION_PLANNER_HUMAN_PROMPT = """
-QUESTION:
-{question}
+        ##QUESTION:
+        {question}
 
-CONTEXT (use only to detect marks or disambiguate — do not copy content):
-{context}
+        ##CONTEXT:
+        {context}
 
-Return the JSON plan now.
-""".strip()
-
-QUESTION_PLANNER_HUMAN_PROMPT = """
-QUESTION:
-{question}
-
-CONTEXT:
-{context}
-
-YOUR TASK:
-- Read the QUESTION and CONTEXT carefully.
-- Follow the step-by-step thinking process from the system prompt.
-- Return a precise JSON execution plan with ALL required fields.
-- Cross-check all fields against the OUTPUT RULES before responding.
+        ##YOUR TASK:
+        - Read the QUESTION and CONTEXT carefully.
+        - Follow the step-by-step thinking process from the system prompt.
+        - Return a precise JSON execution plan with ALL required fields.
+        - Cross-check all fields against the OUTPUT RULES before responding.
 """.strip()
 
 QUESTION_PLANNER_PROMPT = ChatPromptTemplate.from_messages([
@@ -1197,86 +1310,86 @@ QUESTION_PLANNER_PROMPT = ChatPromptTemplate.from_messages([
 
 # ===========================================Diagram queary prompt: version 3=======================================
 DIAGRAM_INJECTOR_USER_PROMPT = """
-## Original Question
-{question}
+    ## Original Question
+    {question}
 
-## Draft Answer
-{draft}
+    ## Draft Answer
+    {draft}
 
-## Your Task
-Inject diagram placeholders into the draft ONLY where a visual is essential —
-meaning the concept cannot be fully understood from prose alone.
+    ## Your Task
+    Inject diagram placeholders into the draft ONLY where a visual is essential —
+    meaning the concept cannot be fully understood from prose alone.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ZERO-DIAGRAM RULE — CHECK THIS FIRST
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-If you find zero eligible positions after Step A:
-  - Return the draft character-for-character as received. Nothing else.
-  - Do not force a diagram. Zero is a valid and expected outcome.
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    ZERO-DIAGRAM RULE — CHECK THIS FIRST
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    If you find zero eligible positions after Step A:
+    - Return the draft character-for-character as received. Nothing else.
+    - Do not force a diagram. Zero is a valid and expected outcome.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP A — IDENTIFY ELIGIBLE POSITIONS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-For each CONTENT paragraph (skip headings, bullet labels, and one-line list items) write:
-  [Section: <heading it belongs to> — <first five words of actual content>]
-  Condition i  — directly explains the question or a key point: PASS / FAIL
-  Condition ii — concept is significantly harder to grasp from prose alone: PASS / FAIL
-  Condition iii — a simple internet search query would return a directly relevant diagram: PASS / FAIL
-  Result: ELIGIBLE / SKIPPED
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    STEP A — IDENTIFY ELIGIBLE POSITIONS
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    For each CONTENT paragraph (skip headings, bullet labels, and one-line list items) write:
+    [Section: <heading it belongs to> — <first five words of actual content>]
+    Condition i  — directly explains the question or a key point: PASS / FAIL
+    Condition ii — concept is significantly harder to grasp from prose alone: PASS / FAIL
+    Condition iii — a simple internet search query would return a directly relevant diagram: PASS / FAIL
+    Result: ELIGIBLE / SKIPPED
 
-HARD EXCLUSIONS — automatically FAIL regardless of content:
-  - Any paragraph in the Introduction section.
-  - Any paragraph in the Conclusion or Summary section.
-  - The last paragraph of the draft — even if it is not labelled as a conclusion.
-  - Any paragraph that appears AFTER the conclusion heading.
+    HARD EXCLUSIONS — automatically FAIL regardless of content:
+    - Any paragraph in the Introduction section.
+    - Any paragraph in the Conclusion or Summary section.
+    - The last paragraph of the draft — even if it is not labelled as a conclusion.
+    - Any paragraph that appears AFTER the conclusion heading.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP B — COUNT AND SELECT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Write:
-  Total eligible: <number>
-  Selected: <number> (maximum three — keep only those most central to the question)
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    STEP B — COUNT AND SELECT
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    Write:
+    Total eligible: <number>
+    Selected: <number> (maximum three — keep only those most central to the question)
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP C — BUILD EACH QUERY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-For each selected position write:
-  diagram_1: <query>
-  diagram_2: <query>  (if applicable)
-  diagram_3: <query>  (if applicable)
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    STEP C — BUILD EACH QUERY
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    For each selected position write:
+    diagram_1: <query>
+    diagram_2: <query>  (if applicable)
+    diagram_3: <query>  (if applicable)
 
-QUERY RULES:
-  - Formula : <core concept> + <what it shows> + <visual type>
-  - Keep it simple — three to six words only.
-  - Use the most commonly searched form of the concept.
-  - A student should be able to type this query into Google and find the diagram immediately.
-  - If the query needs more than six words to be specific → the concept is too complex
-    for a diagram here. Discard that position.
+    QUERY RULES:
+    - Formula : <core concept> + <what it shows> + <visual type>
+    - Keep it simple — three to six words only.
+    - Use the most commonly searched form of the concept.
+    - A student should be able to type this query into Google and find the diagram immediately.
+    - If the query needs more than six words to be specific → the concept is too complex
+        for a diagram here. Discard that position.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP D — OUTPUT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-After completing Steps A, B, C above, write this exact line:
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    STEP D — OUTPUT
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    After completing Steps A, B, C above, write this exact line:
 
----END OF ANALYSIS---
+    ---END OF ANALYSIS---
 
-Then immediately output the complete draft with placeholders injected.
-No commentary before or after the draft. No preamble. No closing note.
+    Then immediately output the complete draft with placeholders injected.
+    No commentary before or after the draft. No preamble. No closing note.
 
-INJECTION FORMAT per position:
-  [Query: <query from Step C>]
-  {{diagram_N}}
+    INJECTION FORMAT per position:
+    [Query: <query from Step C>]
+    {{diagram_N}}
 
-  Inserted AFTER the eligible paragraph, BEFORE the next paragraph.
-  N increments from one: {{diagram_1}}  {{diagram_2}}  {{diagram_3}}
-  Each placeholder appears exactly once.
+    Inserted AFTER the eligible paragraph, BEFORE the next paragraph.
+    N increments from one: {{diagram_1}}  {{diagram_2}}  {{diagram_3}}
+    Each placeholder appears exactly once.
 
-DRAFT OUTPUT RULES:
-  - Every word of the original draft must be present.
-  - Do NOT summarise, shorten, rewrite, or omit any part.
-  - The ONLY additions are [Query: ...] lines and {{diagram_N}} placeholders.
-  - NEVER place a placeholder after the conclusion or at the end of the response.
-  - Output must be longer than the input draft — if shorter, you have truncated.
+    DRAFT OUTPUT RULES:
+    - Every word of the original draft must be present.
+    - Do NOT summarise, shorten, rewrite, or omit any part.
+    - The ONLY additions are [Query: ...] lines and {{diagram_N}} placeholders.
+    - NEVER place a placeholder after the conclusion or at the end of the response.
+    - Output must be longer than the input draft — if shorter, you have truncated.
 """.strip()
 
 DIAGRAM_INJECTOR_PROMPT = ChatPromptTemplate.from_messages([
@@ -1343,90 +1456,90 @@ DIAGRAM_INJECTOR_PROMPT = ChatPromptTemplate.from_messages([
 
 # ==========================================Retrieval Grader Prompt: version 2=======================================
 RETRIEVAL_GRADER_SYSTEM_PROMPT = """
-You are a Retrieval Grader in an academic RAG pipeline.
+    You are a Retrieval Grader in an academic RAG pipeline.
 
-Your ONLY job: decide whether the retrieved context contains enough
-information to answer the student's question — using ONLY what is
-explicitly written in the context, with no outside knowledge.
+    Your ONLY job: decide whether the retrieved context contains enough
+    information to answer the student's question — using ONLY what is
+    explicitly written in the context, with no outside knowledge.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-MANDATORY GRADING PROCESS (follow every step in order)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    MANDATORY GRADING PROCESS (follow every step in order)
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-STEP A — DECOMPOSE THE QUESTION
-  Break the question into every distinct piece of information it requires.
-  Write each as a short noun phrase.
-  This becomes your REQUIREMENTS LIST.
-  A multi-part question produces multiple items. A simple question may produce one.
+    STEP A — DECOMPOSE THE QUESTION
+    Break the question into every distinct piece of information it requires.
+    Write each as a short noun phrase.
+    This becomes your REQUIREMENTS LIST.
+    A multi-part question produces multiple items. A simple question may produce one.
 
-STEP B — AUDIT THE CONTEXT AGAINST THE LIST
-  For each item in your REQUIREMENTS LIST:
-    Ask: is this item EXPLICITLY stated in the retrieved context?
-    Mark it PRESENT if the context directly addresses it.
-    Mark it ABSENT  if the context omits it, implies it, or only shares keywords with it.
+    STEP B — AUDIT THE CONTEXT AGAINST THE LIST
+    For each item in your REQUIREMENTS LIST:
+        Ask: is this item EXPLICITLY stated in the retrieved context?
+        Mark it PRESENT if the context directly addresses it.
+        Mark it ABSENT  if the context omits it, implies it, or only shares keywords with it.
 
-  STRICT AUDIT RULES:
-  - A concept is PRESENT only if the context contains a direct statement about it.
-  - Keyword overlap alone does NOT make an item PRESENT.
-  - Inference from related content does NOT make an item PRESENT.
-  - You are grading as if you have never read anything outside this context.
+    STRICT AUDIT RULES:
+    - A concept is PRESENT only if the context contains a direct statement about it.
+    - Keyword overlap alone does NOT make an item PRESENT.
+    - Inference from related content does NOT make an item PRESENT.
+    - You are grading as if you have never read anything outside this context.
 
-STEP C — DERIVE THE SCORE FROM THE AUDIT
-  ALL items PRESENT                   → "accurate"
-  SOME items PRESENT, SOME ABSENT     → "ambiguous"
-  ALL items ABSENT or off-topic       → "not_found"
+    STEP C — DERIVE THE SCORE FROM THE AUDIT
+    ALL items PRESENT                   → "accurate"
+    SOME items PRESENT, SOME ABSENT     → "ambiguous"
+    ALL items ABSENT or off-topic       → "not_found"
 
-  TIEBREAKER — when borderline between two scores:
-  - Is the missing item central to the question or peripheral?
-    Central item missing   → choose the lower score.
-    Peripheral item missing → stay at the higher score.
-  - When still in doubt → choose the LOWER (stricter) score.
+    TIEBREAKER — when borderline between two scores:
+    - Is the missing item central to the question or peripheral?
+        Central item missing   → choose the lower score.
+        Peripheral item missing → stay at the higher score.
+    - When still in doubt → choose the LOWER (stricter) score.
 
-STEP D — WRITE THE REASONING
-  Your reasoning field MUST:
-  - State your REQUIREMENTS LIST from Step A.
-  - Name each PRESENT item explicitly (what the context does cover).
-  - Name each ABSENT item explicitly (what the context does not cover).
-  - State which score rule from Step C was triggered and why.
-  - Never use vague phrases like "partially relevant" or "somewhat addresses".
-  - A reasoning that does not name specific concepts from the question is INVALID.
+    STEP D — WRITE THE REASONING
+    Your reasoning field MUST:
+    - State your REQUIREMENTS LIST from Step A.
+    - Name each PRESENT item explicitly (what the context does cover).
+    - Name each ABSENT item explicitly (what the context does not cover).
+    - State which score rule from Step C was triggered and why.
+    - Never use vague phrases like "partially relevant" or "somewhat addresses".
+    - A reasoning that does not name specific concepts from the question is INVALID.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SCORING CONTRACT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-"accurate"  → Every item in your REQUIREMENTS LIST is PRESENT in the context.
-              The context directly and completely addresses the question.
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    SCORING CONTRACT
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    "accurate"  → Every item in your REQUIREMENTS LIST is PRESENT in the context.
+                The context directly and completely addresses the question.
 
-"ambiguous" → At least one item in your REQUIREMENTS LIST is PRESENT
-              and at least one is ABSENT.
-              The context is useful but incomplete.
+    "ambiguous" → At least one item in your REQUIREMENTS LIST is PRESENT
+                and at least one is ABSENT.
+                The context is useful but incomplete.
 
-"not_found" → Every item in your REQUIREMENTS LIST is ABSENT.
-              The context shares keywords at most but does not address the question.
+    "not_found" → Every item in your REQUIREMENTS LIST is ABSENT.
+                The context shares keywords at most but does not address the question.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-OUTPUT FORMAT
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Return ONLY valid JSON — no preamble, no markdown fences:
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    OUTPUT FORMAT
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    Return ONLY valid JSON — no preamble, no markdown fences:
 
-{{
-  "requirements_list" : ["<noun phrase>", "<noun phrase>", ...],
-  "present_items"     : ["<noun phrase>", ...],
-  "absent_items"      : ["<noun phrase>", ...],
-  "binary_score"      : "accurate" | "ambiguous" | "not_found",
-  "reasoning"         : "<which Step C rule triggered and why, naming specific concepts>"
-}}
+    {{
+    "requirements_list" : ["<noun phrase>", "<noun phrase>", ...],
+    "present_items"     : ["<noun phrase>", ...],
+    "absent_items"      : ["<noun phrase>", ...],
+    "binary_score"      : "accurate" | "ambiguous" | "not_found",
+    "reasoning"         : "<which Step C rule triggered and why, naming specific concepts>"
+    }}
 """.strip()
 RETRIEVAL_GRADER_HUMAN_PROMPT = """
-STUDENT QUESTION:
-{question}
+    ##STUDENT QUESTION:
+    {question}
 
-RETRIEVED CONTEXT:
-{context}
+    ##RETRIEVED CONTEXT:
+    {context}
 
-NOTE: Grade THIS context chunk in isolation — not in combination with any other chunks.
+    NOTE: Grade THIS context chunk in isolation — not in combination with any other chunks.
 
-Grade the context against the question using the scoring rules above. Be strict.
+    Grade the context against the question using the scoring rules above. Be strict.
 """
 
 RETRIEVAL_GRADER_PROMPT = ChatPromptTemplate.from_messages([

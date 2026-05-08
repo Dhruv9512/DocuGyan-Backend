@@ -34,7 +34,7 @@ class DocuExtractor:
 
   
 
-    def extract_from_url(self) -> str:
+    def run(self) -> str:
         extension = self._get_file_extension(self.file_url)
         file_name = self._get_file_name(self.file_url)
         readable_ext = extension if extension else "unknown"
@@ -564,7 +564,7 @@ def build_DocuExtractor(project_id: str, url: str) -> str:
     
     try:
         app = DocuExtractor(project_id=project_id, file_url=url)
-        extracted_md_url = app.extract_from_url() 
+        extracted_md_url = app.run() 
         return extracted_md_url
     except Exception as e:
         logger.error(f"DocuExtractor failed: {e}", exc_info=True)
