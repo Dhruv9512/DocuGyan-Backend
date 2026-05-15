@@ -58,6 +58,10 @@ huggingface-hub
 qdrant-client
 pymilvus
 
+# --- Static Files ---
+# Serves Django admin CSS/JS directly from the app (no nginx needed)
+whitenoise==6.9.0
+
 # --- Environment & Utilities ---
 python-dotenv==1.0.1
 requests==2.32.3
