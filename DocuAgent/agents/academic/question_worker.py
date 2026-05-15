@@ -24,9 +24,6 @@ from DocuAgent.schemas.agent_schemas import (
 
 from typing import Any, List, Tuple, Dict
 
-from langchain_core.documents import Document
-
-from langgraph.graph import StateGraph, START, END
 
 
 logging.basicConfig(level=logging.INFO)
@@ -107,8 +104,9 @@ class QuestionWorkerGraph:
         return {"plan": plan}
 
     # ── Helper: Format retrieved docs ─────────────────────────────────────────
-    def _format_retrieved_context(self, retrieved_docs: List[Document]) -> List[Dict[str, Any]]:
+    def _format_retrieved_context(self, retrieved_docs: list) -> List[Dict[str, Any]]:
         """Formats LangChain documents into dicts compatible with build_drafter_user_prompt."""
+        from langchain_core.documents import Document
         if not retrieved_docs:
             return []
 
@@ -421,6 +419,7 @@ class QuestionWorkerGraph:
 
     # ── Graph Builder ─────────────────────────────────────────────────────────
     def build(self):
+        from langgraph.graph import StateGraph, START, END
         wf = StateGraph(QuestionState)
 
         wf.add_node("retrieve", self._retrieve_context)

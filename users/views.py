@@ -8,8 +8,6 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.conf import settings
 
-from google.oauth2 import id_token
-from google.auth.transport.requests import Request
 
 from core.authentication import generate_otp, CookieJWTAuthentication
 from core.cache import delete_all_user_cache
@@ -170,6 +168,8 @@ class Google_Login_SignupView(APIView):
             return Response({"error": "Token not provided"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
+            from google.oauth2 import id_token
+            from google.auth.transport.requests import Request
             idinfo = id_token.verify_oauth2_token(token_str, Request(), GOOGLE_CLIENT_ID)
         except ValueError:
             return Response({"error": "Invalid token"}, status=status.HTTP_400_BAD_REQUEST)

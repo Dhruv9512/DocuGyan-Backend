@@ -12,10 +12,6 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 import json
 
-from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolNode
-from langgraph.checkpoint.memory import MemorySaver
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage, AIMessage
 import logging
 
 logger = logging.getLogger(__name__)
@@ -54,6 +50,7 @@ class HybridRAGChatbot:
             session_id, len(self.hybrid_rag_tools)
         )
 
+        from langgraph.checkpoint.memory import MemorySaver
         self.memory_saver = MemorySaver()
         self.graph = self._build_graph()
         logger.info("[HybridRAGChatbot] Graph compiled successfully | session=%s", session_id)
@@ -95,6 +92,7 @@ class HybridRAGChatbot:
 
 
     def _generate_node(self, state: ChatState) -> dict:
+        from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
         retrieved = [
             msg.content
             for msg in state["messages"]
@@ -197,7 +195,9 @@ class HybridRAGChatbot:
     # ─────────────────────────────────────────
     # Graph
     # ─────────────────────────────────────────
-    def _build_graph(self) -> StateGraph:
+    def _build_graph(self) -> "StateGraph":
+        from langgraph.graph import StateGraph, END
+        from langgraph.prebuilt import ToolNode
         graph = StateGraph(ChatState)
 
         graph.add_node("agent", self._agent_node)
@@ -224,6 +224,7 @@ class HybridRAGChatbot:
     # ─────────────────────────────────────────
 
     def chat(self) -> str | None:
+        from langchain_core.messages import HumanMessage
         config = {"configurable": {"thread_id": self.session_id}}
         base_messages = [HumanMessage(content=self.user_query)]
 
@@ -333,6 +334,7 @@ class HybridRAGChatbot:
         )[::-1]
 
         history = []
+        from langchain_core.messages import HumanMessage, AIMessage
         for turn in turns:
             history.append(HumanMessage(content=turn.user_message))
             history.append(AIMessage(content=turn.assistant_response))
