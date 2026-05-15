@@ -14,12 +14,10 @@ echo "-----> Running database migrations..."
 python manage.py migrate --noinput
 
 echo "-----> Collecting static files..."
-# collectstatic automatically creates the staticfiles/ folder if it doesn't exist.
-# All Django admin CSS/JS is copied into it from installed packages.
 python manage.py collectstatic --noinput --clear
 
 echo "-----> Starting Celery worker..."
 celery -A DocuGyan worker -l info -Q DocuGyan,DocuAgent_tasks,DocuChat_tasks,DocuMail_tasks --concurrency=2 &
 
-echo "-----> Starting Daphne..."
-exec daphne -b 0.0.0.0 -p 8000 DocuGyan.asgi:application
+echo "-----> Starting Daphne on port ${PORT:-8000}..."
+exec daphne -b 0.0.0.0 -p ${PORT:-8000} DocuGyan.asgi:application
