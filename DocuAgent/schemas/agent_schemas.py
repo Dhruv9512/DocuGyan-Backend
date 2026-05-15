@@ -73,6 +73,7 @@ class QuestionState(TypedDict):
     # Pipeline execution data
     grader_assessment: RetrievalGraderOutput
     retrieved_docs: list[Any]
+    retrieved_references: list[str]
  
     draft_answer: str
     diagram_mapping: Dict[str, str]

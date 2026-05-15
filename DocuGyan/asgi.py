@@ -8,7 +8,7 @@ django_asgi_app = get_asgi_application()
 
 from channels.routing import ProtocolTypeRouter, URLRouter
 import DocuAgent.websocket.routing
-import DocuChat.routing
+import DocuChat.websocket.routing
 from core.middleware import JWTAuthWebSocketMiddleware
 
 
@@ -20,7 +20,7 @@ application = ProtocolTypeRouter({
     "websocket": JWTAuthWebSocketMiddleware(
         URLRouter(
             DocuAgent.websocket.routing.websocket_urlpatterns +
-            DocuChat.routing.websocket_urlpatterns
+            DocuChat.websocket.routing.websocket_urlpatterns
         )
     ),
 })

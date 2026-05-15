@@ -1,6 +1,6 @@
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # ==========================================================
 # Question Refinement Output Schema from QuestionRefiner
@@ -45,75 +45,125 @@ class DomainClassification(BaseModel):
 # Academic Question Planning Output Schema from AcademicAgent
 # ============================================================
 class PlannerOutput(BaseModel):
-    """Execution strategy and strict constraints for answering an academic question."""
-    steps: List[str] = Field(
-        description="A sequential list of steps the downstream agents should follow to answer the question effectively."
+    """Execution plan produced by the question planner."""
+
+    question: str = Field(
+        default="",
+        description="The original question — used as fallback for entity extraction."
     )
-    question_category: Literal["academic", "coding", "math", "factual", "analytical", "creative"] = Field(
-        description="The fundamental category of the question. Used to route to the correct specialist persona."
+
+    question_category: Literal[
+        "academic", "coding", "math", "factual",
+        "analytical", "creative", "default"
+    ] = Field(
+        default="default",
+        description=(
+            "Question category — controls which answer template is used. "
+            "Must be 'coding' if requires_code=True."
+        )
     )
-    allocated_marks: Optional[int] = Field(
-        default=None,
-        description="The specific marks or points allocated to this question if mentioned (e.g., 5, 10). If not mentioned, return null."
+
+    allocated_marks: int = Field(
+        default=5,
+        ge=1,
+        le=20,  
+        description=(
+            "Marks allocated for this question. "
+            "Must be a positive integer between 1 and 20. Never null. Default is 5."
+        )
     )
-    target_word_count: int = Field(
-        description="The estimated ideal word count required to answer this question comprehensively based on its depth or allocated marks."
-    )
+
     requires_code: bool = Field(
-        description="True if the question asks for a programmatic solution, algorithm, syntax, or code snippet."
+        default=False,
+        description=(
+            "True if any code, algorithm, pseudocode, or implementation is needed — "
+            "even if explanation is also required alongside the code."
+        )
     )
+
     requires_diagram: bool = Field(
-        description="True if the question inherently requires a visual diagram, architecture flow, or graph to explain properly."
+        default=False,
+        description=(
+            "True if a diagram, flowchart, or visual would help a student "
+            "understand the concept more clearly than text alone. "
+            "True for: processes, flows, architectures, hierarchies, cycles, "
+            "state machines, or any sequential working. "
+            "False only if the concept is purely theoretical with no visual structure."
+        )
     )
+
     is_comparison: bool = Field(
-        description="True if the question asks to compare, contrast, or find the difference between two or more concepts."
+        default=False,
+        description=(
+            "True if the question asks to compare, contrast, or distinguish concepts. "
+            "When True, core_entities must list every concept being compared separately."
+        )
     )
+
     core_entities: List[str] = Field(
-        description="The absolute core concepts, algorithms, entities, or terms that MUST be present in the final drafted answer."
+        default_factory=list,
+        description=(
+            "Every core concept, tool, algorithm, or object the answer must address. "
+            "One short noun phrase per entity. Never empty — minimum 1 entity always."
+        )
     )
+
+    # ── Validators ────────────────────────────────────────────────────────────
+
+    @field_validator("allocated_marks", mode="before")
+    @classmethod
+    def coerce_marks(cls, v):
+        """Coerce None or invalid marks to default 5."""
+        if v is None:
+            return 5
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return 5
+
+    @field_validator("core_entities", mode="before")
+    @classmethod
+    def ensure_non_empty_entities(cls, v, info):
+        """
+        Guarantee core_entities is never empty.
+        Falls back to extracting meaningful words from the question.
+        """
+        if not v:
+            question = info.data.get("question", "")
+            if question:
+                stop_words = {
+                    "what", "is", "are", "how", "does", "do", "explain",
+                    "describe", "define", "discuss", "the", "a", "an",
+                    "of", "in", "and", "or", "with", "for", "to", "that"
+                }
+                words = question.replace("?", "").replace(",", "").split()
+                meaningful = [w for w in words if w.lower() not in stop_words]
+                if meaningful:
+                    return [" ".join(meaningful[:4])]
+            return ["Unknown — re-extract from question"]
+        return v
+
+    @model_validator(mode="after")
+    def sync_coding_category(self):
+        """If requires_code=True, category must be coding."""
+        if self.requires_code and self.question_category != "coding":
+            self.question_category = "coding"
+        return self
+
 # ====================================================================
 # Retrieval Grader Output Schema from AcademicAgent's C-RAG workflow
 # =====================================================================
 class RetrievalGraderOutput(BaseModel):
-    """
-    Structured output for the Corrective RAG (C-RAG) grader.
-    Determines if the retrieved documents are sufficient to answer the question.
-    """
-    binary_score: Literal["accurate", "not_found", "ambiguous"] = Field(
-        description="Whether the retrieved context is relevant and sufficient."
+    binary_score: Literal["accurate", "ambiguous", "not_found"] = Field(
+        description=(
+            "accurate   → context fully and directly answers the question; no inference needed. "
+            "ambiguous  → context is partially relevant but missing critical details or sub-parts. "
+            "not_found  → context is irrelevant or off-topic; keyword overlap is not enough."
+        )
     )
     reasoning: str = Field(
-        description="Brief explanation of why this score was given."
-    )
-
-
-# ============================================================
-# Diagram Output Schema from AcademicAgent's Diagram Fetcher
-# ============================================================
-class DiagramOutput(BaseModel):
-    diagram_type: Literal["mermaid", "none"] = Field(
-        ...,
         description=(
-            "Use 'mermaid' for all diagrams. Use 'none' only if the concept "
-            "genuinely cannot be represented as a diagram."
-        )
-    )
-    diagram_code: str = Field(
-        ...,
-        description=(
-            "Valid Mermaid diagram code ONLY — no markdown fences, no preamble. "
-            "Start directly with the diagram type keyword e.g. 'flowchart TD' or 'classDiagram'. "
-            "If diagram_type is 'none', set this to an empty string."
-        )
-    )
-    caption: str = Field(
-        ...,
-        description="One sentence describing what the diagram shows. Max 15 words."
-    )
-    fallback_text: str = Field(
-        ...,
-        description=(
-            "A plain-text description of the concept (2-3 sentences) to show "
-            "if the diagram cannot be rendered."
+            "1-3 sentences citing specific content from the context "
+            "OR naming exactly what is missing. Never speak in generalities."
         )
     )

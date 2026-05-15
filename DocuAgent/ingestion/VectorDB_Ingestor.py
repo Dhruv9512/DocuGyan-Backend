@@ -11,9 +11,11 @@ from langchain_core.documents import Document
 from langchain_community.vectorstores import Milvus
 
 # Adjust import based on your actual project structure
-from DocuAgent.utils.utility import get_collection_name, create_zilliz_collection, get_request_session_with_blob_auth
+from DocuAgent.utils.utility import create_zilliz_collection, get_request_session_with_blob_auth
+from core.utils.utility import get_collection_name
 from core.utils.llm_engine import LLMEngine
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from DocuAgent.websocket.notifier import Notifier
 
 from DocuAgent.models import DocuProcess
 
@@ -30,10 +32,13 @@ class VectorDBIngestor:
     converting them into standard LangChain Documents with rich metadata, and 
     inserting them into the Vector DB.
     """
-    def __init__(self, project_id: str, extracted_doc_urls: List[str]):
+    def __init__(self, project_id: str, extracted_doc_urls: List[str], is_final_answer: bool = False):
         self.project_id = project_id
         self.collection_name = get_collection_name(project_id)
         self.extracted_doc_urls = extracted_doc_urls
+        self.is_final_answer = is_final_answer
+        self.socket_node = "academic" if is_final_answer else "vector_rag_ingest"
+        self.notifier = Notifier(project_id)
         self.session = get_request_session_with_blob_auth()
         self.embedding_model = LLMEngine.get_huggingface_embedding_client()
         self.vectorstore = None
@@ -42,18 +47,34 @@ class VectorDBIngestor:
     def run(self) -> bool:
         try:
             logger.info(f"Starting Vector Ingestion for project {self.project_id}. Target Collection: {self.collection_name}")
+            self.notifier.send_message(
+                f"Vector Ingestor: Starting ingestion for {len(self.extracted_doc_urls or [])} document source(s).",
+                current_node=self.socket_node,
+                status="processing",
+            )
 
             # 1. Download and parse into LangChain Documents
             documents = self._process_documents(self.extracted_doc_urls)
             if not documents:
                 logger.warning("No valid text found in the provided documents to ingest.")
                 raise ValueError("No valid text found in the provided documents to ingest.")
+            self.notifier.send_message(
+                f"Vector Ingestor: Parsed {len(documents)} document page(s).",
+                current_node=self.socket_node,
+                status="processing",
+            )
 
             # 2. Chunk the documents
             chunked_documents = self._document_chunking(documents)
             if not chunked_documents:
                 logger.warning("Document chunking resulted in no valid chunks to ingest.")
                 raise ValueError("Document chunking resulted in no valid chunks to ingest.")
+            total_batches = (len(chunked_documents) + BATCH_SIZE - 1) // BATCH_SIZE
+            self.notifier.send_message(
+                f"Vector Ingestor: Generated {len(chunked_documents)} chunk(s) across {total_batches} batch(es).",
+                current_node=self.socket_node,
+                status="processing",
+            )
 
             # 3. Insert into Zilliz vector DB
             if not self._insert_into_vector_db(chunked_documents):
@@ -70,9 +91,18 @@ class VectorDBIngestor:
                 raise ValueError(f"DocuProcess not found for the given project_id: {self.project_id}")
 
             logger.info(f"Successfully processed {len(chunked_documents)} page chunks.")
+            self.notifier.send_message(
+                "Vector Ingestor: Ingestion complete.",
+                current_node=self.socket_node,
+                status="completed",
+            )
             return True
 
         except Exception as e:
+            self.notifier.send_error(
+                f"Vector Ingestor: Ingestion failed: {str(e)}",
+                current_node=self.socket_node,
+            )
             logger.error(f"FATAL: VectorDBIngestor failed: {str(e)}", exc_info=True)
             raise RuntimeError(f"VectorDBIngestor failed: {str(e)}") from e
 
@@ -83,7 +113,7 @@ class VectorDBIngestor:
         """
         all_processed_docs = []
         
-        for url in doc_urls:
+        for idx, url in enumerate(doc_urls, start=1):
             try:
                 logger.info(f"Downloading extracted document: {url}")
                 response = self.session.get(url, timeout=30)
@@ -91,12 +121,25 @@ class VectorDBIngestor:
                 content = response.text
 
                 # Parse the markdown into standard Documents
-                parsed_pages = self._parse_markdown_to_documents(content, url)
+                if self.is_final_answer:
+                    parsed_pages = self._parse_qna_to_documents(content, url)
+                else:
+                    parsed_pages = self._parse_markdown_to_documents(content, url)
+
                 all_processed_docs.extend(parsed_pages)
+                self.notifier.send_message(
+                    f"Vector Ingestor: Processed source {idx}/{len(doc_urls)}.",
+                    current_node=self.socket_node,
+                    status="processing",
+                )
 
             except requests.exceptions.RequestException as e:
                 # Log the error but continue processing other URLs
                 logger.error(f"Failed to download {url}. Skipping. Error: {e}")
+                self.notifier.send_error(
+                    f"Vector Ingestor: Failed to download source {idx}/{len(doc_urls)}. Skipping.",
+                    current_node=self.socket_node,
+                )
                 continue
         
         if not all_processed_docs:
@@ -168,6 +211,57 @@ class VectorDBIngestor:
                     "source_url": source_url,
                     "page_number": page_num,
                     "is_vision_extracted": is_vision_extracted,
+                    "chunk_type": "reference",
+                    "question_text": ""
+                }
+            )
+            documents.append(doc)
+            
+        return documents
+    
+    def _parse_qna_to_documents(self, raw_md: str, source_url: str) -> List[Document]:
+        """
+        Intelligently splits the aggregated Q&A Markdown format into separate Documents.
+        Uses the '---' separator defined in format_final to safely split blocks, 
+        preventing accidental splits on internal LLM sub-headers.
+        """
+        documents = []
+        
+        # 1. Strip the global title added by the aggregate_and_upload node
+        clean_md = re.sub(r'(?i)^# Academic Q&A Final Document\s*', '', raw_md).strip()
+        
+        # 2. Split strictly by the '---' that format_final appends to the end of every answer
+        raw_blocks = re.split(r'(?m)^---\s*$', clean_md)
+        
+        for block in raw_blocks:
+            block = block.strip()
+            
+            # Skip empty blocks (often occurs at the very end after the last '---')
+            if not block:
+                continue
+                
+            # 3. Parse out the header to get the metadata
+            # At this point, the block should perfectly start with "### {original_question}"
+            lines = block.split('\n', 1)
+            raw_header = lines[0].replace('### ', '').strip() if lines else "Unknown"
+            
+            # Match "1. What is...", "Q2: Define...", etc.
+            match = re.match(r'^(?:Q(?:uestion)?)?\s*(\d+)?(?:[.:)])?\s*(.*)$', raw_header, re.IGNORECASE)
+            
+            q_text = match.group(2).strip() if match and match.group(2) else raw_header
+
+            # 4. Construct the Document
+            doc = Document(
+                page_content=block,
+                metadata={
+                    "project_id": self.project_id,
+                    "collection_name": self.collection_name,
+                    "source_title": "Generated Q&A",
+                    "source_url": source_url,
+                    "page_number": 0,
+                    "is_vision_extracted": False,
+                    "chunk_type": "qna",
+                    "question_text": q_text if q_text else "Unknown Question", 
                 }
             )
             documents.append(doc)
@@ -201,27 +295,55 @@ class VectorDBIngestor:
                 raise ValueError("No chunked documents to insert into the vector database.")
 
             logger.info("Connecting to Zilliz....")
+            self.notifier.send_message(
+                "Vector Ingestor: Connecting to vector database...",
+                current_node=self.socket_node,
+                status="processing",
+            )
             
             if not self.is_collection:
                 self.is_collection=create_zilliz_collection(
                     collection_name=self.collection_name,
-                    dim=384
+                    dim=384,
+                    project_id = self.project_id
                 )
                 col = Collection(self.collection_name)
                 col.load()
                 connections.disconnect("default")
                 logger.info("Disconnected pymilvus default alias before LangChain reconnect.")
+                self.notifier.send_message(
+                    "Vector Ingestor: Collection ready for inserts.",
+                    current_node=self.socket_node,
+                    status="processing",
+                )
 
+            total_batches = (len(chunked_documents) + BATCH_SIZE - 1) // BATCH_SIZE
+            batch_number = 0
             for i in range(0, len(chunked_documents), BATCH_SIZE):
                 docs = chunked_documents[i:i + BATCH_SIZE]
+                batch_number += 1
+                self.notifier.send_message(
+                    f"Vector Ingestor: Inserting batch {batch_number}/{total_batches} ({len(docs)} chunk(s)).",
+                    current_node=self.socket_node,
+                    status="processing",
+                )
                 success = self._insert_batch_to_zilliz(docs)
                 if not success:
                     logger.error(f"Failed on batch starting at index {i}")
                     raise ValueError(f"Failed to insert batch starting at index {i}")
 
+            self.notifier.send_message(
+                "Vector Ingestor: All batches inserted.",
+                current_node=self.socket_node,
+                status="completed",
+            )
             return True  
 
         except Exception as e:
+            self.notifier.send_error(
+                f"Vector Ingestor: Vector DB insertion failed: {e}",
+                current_node=self.socket_node,
+            )
             logger.error(f"Error: {e}")
             raise ValueError(f"Error during vector DB insertion: {e}") from e
 
@@ -261,9 +383,9 @@ class VectorDBIngestor:
 # =========================================================
 # Builder Function
 # =========================================================
-def build_vector_db_ingestor(project_id: str, extracted_doc_urls: list) -> bool:
+def build_vector_db_ingestor(project_id: str, extracted_doc_urls: list[str] = None, is_final_answer: bool = False) -> bool:
     """
     Factory function to initialize and execute the VectorDBIngestor.
     """
-    ingestor = VectorDBIngestor(project_id=project_id, extracted_doc_urls=extracted_doc_urls)
+    ingestor = VectorDBIngestor(project_id=project_id, extracted_doc_urls=extracted_doc_urls, is_final_answer=is_final_answer)
     return ingestor.run()

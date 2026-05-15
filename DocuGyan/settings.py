@@ -18,6 +18,35 @@ import dj_database_url
 from datetime import timedelta
 load_dotenv()
 
+
+# ================== Constants variable that is used in multiple classes and in multiple files =================
+TOP_K = 20
+RERANK_K = 5
+ENSEMBLE_WEIGHTS = [0.4, 0.6]
+HISTORY_FALLBACK_SIZES = [10, 5, 2, 0]
+DOWNLOAD_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.google.com/",
+    "Sec-Fetch-Dest": "image",
+    "Sec-Fetch-Mode": "no-cors",
+    "Sec-Fetch-Site": "cross-site",
+}
+
+ALLOWED_MIME_TYPES = {
+    'image/jpeg', 'image/jpg', 'image/png', 'image/gif',
+    'image/webp', 'image/svg+xml', 'image/bmp', 'image/tiff',
+}
+
+
+
+
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -29,9 +58,10 @@ VERCEL_BLOB_TOKEN = os.environ.get("BLOB_READ_WRITE_TOKEN")
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL")
 
 
-ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "127.0.0.1").split(",")
-CORS_ALLOW_ALL_ORIGINS = False
-CORS_ALLOWED_ORIGINS = os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",")
+ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
+CORS_ALLOWED_ORIGINS = os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+CSRF_TRUSTED_ORIGINS = os.environ.get("CSRF_TRUSTED_ORIGINS", "http://localhost:3000").split(",")
+CORS_ALLOW_CREDENTIALS = True
 
 # Brevo
 EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "anymail.backends.sendinblue.EmailBackend")
@@ -50,6 +80,14 @@ GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 HUGGINGFACE_API_KEY = os.environ.get("HUGGINGFACE_API_KEY")
+CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY")
+
+# LLM Backup API Keys
+HUGGINGFACE_API_KEY_BACKUP = os.environ.get("HUGGINGFACE_API_KEY_BACKUP")
+GROQ_API_KEY_BACKUP = os.environ.get("GROQ_API_KEY_BACKUP")
+GOOGLE_API_KEY_BACKUP = os.environ.get("GOOGLE_API_KEY_BACKUP")
+CEREBRAS_API_KEY_BACKUP = os.environ.get("CEREBRAS_API_KEY_BACKUP")
+
 
 # --- Vector Database (Zilliz/Milvus) ---
 ZILLIZ_URI = os.environ.get("ZILLIZ_URI")
@@ -59,6 +97,10 @@ ZILLIZ_ALIAS = os.environ.get("ZILLIZ_ALIAS", "default")
 # -----Internet search API Keys-----
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY")
 
+# Image search api key
+SERPER_API_KEY = os.environ.get("SERPER_API_KEY")
+SERPAPI_API_KEY = os.environ.get("SERPAPI_API_KEY")
+GOOGLE_CX = os.environ.get("GOOGLE_CX")
 
 # Application definition
 INSTALLED_APPS = [
@@ -99,7 +141,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True
+# CORS_ALLOW_ALL_ORIGINS was moved up
 
 ROOT_URLCONF = 'DocuGyan.urls'
 
@@ -121,7 +163,7 @@ TEMPLATES = [
 
 
 ASGI_APPLICATION = 'DocuGyan.asgi.application'
-
+WSGI_APPLICATION = 'DocuGyan.wsgi.application'
 
 # Database
 DATABASES = {
@@ -157,7 +199,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Kolkata'
 
 USE_I18N = True
 
@@ -192,8 +234,6 @@ CHANNEL_LAYERS = {
         },
     },
 }
-
-
 
 # --- CELERY SETTINGS ---
 CELERY_BROKER_URL = CELERY_BROKER_URL
@@ -261,3 +301,47 @@ SIMPLE_JWT = {
     'USER_ID_FIELD': 'user_uuid',  
     'USER_ID_CLAIM': 'user_uuid',  
 }
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'core.authentication.CookieJWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+}
+
+
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} [{name}] {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        # Your apps
+        'DocuChat': {
+            'handlers': ['console'],
+            'level': 'INFO',
+        },
+        # Silence the "messy" libraries
+        'pymilvus': {'level': 'WARNING', 'handlers': ['console'], 'propagate': False},
+        'openai': {'level': 'WARNING', 'handlers': ['console'], 'propagate': False},
+        'langchain': {'level': 'INFO', 'handlers': ['console'], 'propagate': False},
+    },
+}
+
+
+
+
+
