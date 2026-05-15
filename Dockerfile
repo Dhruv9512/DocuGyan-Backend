@@ -6,7 +6,7 @@
 FROM ghcr.io/astral-sh/uv:latest AS uv-source
 
 # Stage 2: Main app image
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -41,6 +41,4 @@ RUN chmod +x entrypoint.sh
 
 EXPOSE 8000
 
-# Default: web server
-# Koyeb Celery override: celery -A DocuGyan worker -l info --concurrency=2
 CMD ["./entrypoint.sh"]
