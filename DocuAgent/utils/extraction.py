@@ -5,7 +5,6 @@ import logging
 from urllib.parse import urlparse, unquote
 import re
 
-import fitz
 import requests  # PyMuPDF
 
 # Import LLM Utility for Vision Calls
@@ -131,6 +130,7 @@ class DocuExtractor:
             temp_pdf.close()
             
             # 3. Process the file
+            import fitz
             with fitz.open(temp_pdf_name) as doc:
                 total_pages = len(doc)
                 self.notifier.send_message(
@@ -312,6 +312,7 @@ class DocuExtractor:
         return False
 
     def _extract_page_local(self, page) -> str:
+        import fitz
         lines = []
         doc = page.parent
 
@@ -449,6 +450,7 @@ class DocuExtractor:
             response = self.session.get(self.file_url, timeout=30)
             response.raise_for_status()
             
+            import fitz
             with fitz.open(stream=response.content, filetype="image") as img_doc:
                 page = img_doc[0]
                 pix = page.get_pixmap(dpi=150)

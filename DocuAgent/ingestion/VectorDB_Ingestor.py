@@ -1,20 +1,17 @@
 import logging
 
-from pymilvus import Collection, connections
 import requests
 import re
 from typing import List
 from django.conf import settings
 
-# Import the industry-standard Document format
 from langchain_core.documents import Document
-from langchain_community.vectorstores import Milvus
 
 # Adjust import based on your actual project structure
 from DocuAgent.utils.utility import create_zilliz_collection, get_request_session_with_blob_auth
 from core.utils.utility import get_collection_name
 from core.utils.llm_engine import LLMEngine
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from core.utils.llm_engine import LLMEngine
 from DocuAgent.websocket.notifier import Notifier
 
 from DocuAgent.models import DocuProcess
@@ -111,6 +108,7 @@ class VectorDBIngestor:
         Downloads documents from URLs, parses them strictly by their markdown 
         '## Page X' headers, and wraps them in LangChain Document objects with metadata.
         """
+        from langchain_core.documents import Document
         all_processed_docs = []
         
         for idx, url in enumerate(doc_urls, start=1):
@@ -273,6 +271,7 @@ class VectorDBIngestor:
         Intelligently chunks documents while perfectly preserving 
         the unique metadata (like page_number) of each original page.
         """
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
         if not documents:
             return []
 
@@ -289,6 +288,7 @@ class VectorDBIngestor:
         return chunked_docs
 
     def _insert_into_vector_db(self, chunked_documents: List[Document]) -> bool:
+        from pymilvus import Collection, connections
         try:
             if not chunked_documents:
                 logger.warning("No chunked documents to insert into the vector database.")
@@ -353,6 +353,7 @@ class VectorDBIngestor:
             raise ValueError("No documents provided for preparation.")
 
         try:
+            from langchain_community.vectorstores import Milvus
             if not self.vectorstore: 
                 self.vectorstore = Milvus(
                     collection_name=self.collection_name,

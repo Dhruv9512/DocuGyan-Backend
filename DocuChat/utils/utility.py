@@ -1,9 +1,8 @@
-from langchain_core.documents import Document
-from flashrank import Ranker, RerankRequest
-
 from django.conf import settings
 
 def rerank_docs(query: str, docs:list):
+        from langchain_core.documents import Document
+        from flashrank import Ranker, RerankRequest
         try:
             reranker = Ranker(model_name="ms-marco-MiniLM-L-12-v2", cache_dir="/tmp")
 

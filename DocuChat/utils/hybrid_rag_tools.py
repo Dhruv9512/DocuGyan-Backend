@@ -2,15 +2,8 @@ import json
 import logging
 
 from django.conf import settings
-from pymilvus import connections, Collection, utility
-from pymilvus.exceptions import MilvusException
 from core.utils.llm_engine import LLMEngine
 from core.utils.utility import get_collection_name
-from langchain_core.documents import Document
-from langchain_core.tools import StructuredTool
-from langchain_community.vectorstores import Milvus
-from langchain_community.retrievers import BM25Retriever
-from langchain_classic.retrievers import EnsembleRetriever
 from DocuChat.utils.utility import rerank_docs
 
 logger = logging.getLogger(__name__)
@@ -30,6 +23,7 @@ class HybridRAGTools:
 
         result = self._load_retrievers()
         if result:
+            from langchain_classic.retrievers import EnsembleRetriever
             self.bm25_retriever, self.vectorstore_retriever = result
             self.ensembled_hybrid_retriever = EnsembleRetriever(
                 retrievers=[self.bm25_retriever, self.vectorstore_retriever],
@@ -41,6 +35,11 @@ class HybridRAGTools:
             self.ensembled_hybrid_retriever = None
 
     def _load_retrievers(self):
+        from pymilvus import connections, Collection, utility
+        from pymilvus.exceptions import MilvusException
+        from langchain_core.documents import Document
+        from langchain_community.vectorstores import Milvus
+        from langchain_community.retrievers import BM25Retriever
         try:
             connections.connect(
                 alias="default",
@@ -166,6 +165,7 @@ class HybridRAGTools:
 
     def get_tools(self) -> list:
         """Returns list of LangChain-compatible tools."""
+        from langchain_core.tools import StructuredTool
         retrieve_tool = StructuredTool.from_function(
             func=self.retrieve_docs,
             name="retrieve_documents",

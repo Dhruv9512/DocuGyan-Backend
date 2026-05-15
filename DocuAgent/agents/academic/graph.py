@@ -19,9 +19,6 @@ from DocuAgent.utils.utility import (
 )
 from core.utils.utility import get_collection_name
 
-# Import Graph framework
-from langgraph.graph import StateGraph, START, END
-from langgraph.types import Send
 
 # Import websocket notifier to send real-time updates to FE
 from DocuAgent.websocket.notifier import Notifier
@@ -55,7 +52,8 @@ class AcademicAgent:
 
     def fetch_and_dispatch(
         self, state: AcademicAgentState
-    ) -> Union[List[Send], dict]:
+    ):
+        from langgraph.types import Send
         self.notifier.send_message(
             "Academic Agent: Extracting questions and initiating workers...",
             current_node="academic",
@@ -180,6 +178,7 @@ class AcademicAgent:
         return questions
 
     def build_graph(self):
+        from langgraph.graph import StateGraph, START, END
         graph = StateGraph(AcademicAgentState)
         graph.add_node("process_single_question", self._process_single_question_wrapper)
         graph.add_node("aggregate", self.aggregate_and_upload)
