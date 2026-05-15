@@ -1,8 +1,7 @@
 # ============================================================
-# requirements.txt
-# Strategy: pin only packages with known stable versions.
-# All langchain-* integrations are unpinned so uv resolves
-# the correct compatible version automatically.
+# requirements.txt — Python 3.12
+# Strategy: pin stable non-langchain packages.
+# Let uv resolve all langchain-* versions automatically.
 # ============================================================
 
 # --- Core Web Framework ---
@@ -27,22 +26,19 @@ channels-redis==4.2.1
 daphne==4.1.2
 
 # --- AI & LLM Core ---
-# Pin langchain + langchain-community only.
-# langchain-core is intentionally unpinned — uv resolves the version
-# that satisfies both langchain and langchain-community simultaneously.
-langchain==0.3.25
-langchain-community==0.3.24
+# All langchain-* are unpinned — uv resolves compatible versions
+# around langchain-classic's langchain-core>=1.3.3 requirement.
+langchain
+langchain-community
+langchain-classic
 
 # --- LangChain Integrations ---
-# These are all unpinned — versions change frequently and uv will
-# pick the latest that is compatible with langchain-core above.
 langchain-google-genai
 langchain-groq
 langchain-huggingface
 langchain-milvus
 langchain-tavily
 langchain-cerebras
-langchain-classic
 
 # --- Multi-Agent Orchestration ---
 langgraph
@@ -63,7 +59,6 @@ qdrant-client
 pymilvus
 
 # --- Static Files ---
-# Serves Django admin CSS/JS directly from the app (no nginx needed)
 whitenoise==6.9.0
 
 # --- Environment & Utilities ---
@@ -81,7 +76,6 @@ pymupdf==1.25.3
 llama-cloud
 
 # --- Vercel Blob Storage ---
-# vercel provides vercel.blob.BlobClient used in DocuAgent/utils/utility.py
 vercel==0.5.3
 vercel-blob==0.4.2
 
