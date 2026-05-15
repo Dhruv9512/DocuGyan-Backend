@@ -32,6 +32,7 @@ daphne==4.1.2
 # that satisfies both langchain and langchain-community simultaneously.
 langchain==0.3.25
 langchain-community==0.3.24
+langchain-classic==1.0.7
 
 # --- LangChain Integrations ---
 # These are all unpinned — versions change frequently and uv will
