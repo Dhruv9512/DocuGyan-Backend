@@ -1,5 +1,3 @@
-from langgraph.graph import StateGraph, START, END
-from langgraph.types import Send
 
 from DocuAgent.utils.extraction import build_DocuExtractor
 from DocuAgent.utils.query_processing import build_QuestionRefiner
@@ -38,6 +36,7 @@ class DocuExtractorAgent:
             raise ValueError("No reference URLs provided for extraction.")
         
         # Spin up multiple 'extract_single_url_worker' nodes at the same time
+        from langgraph.types import Send
         return [
             Send("extract_single_url_worker", {"url": url, "project_id": self.project_id}) 
             for url in urls
@@ -122,6 +121,7 @@ class DocuExtractorAgent:
     # Graph Construction
     # ==========================================
     def build_graph(self):
+        from langgraph.graph import StateGraph, START, END
         graph = StateGraph(ExtractorState)
         
         # Add the nodes

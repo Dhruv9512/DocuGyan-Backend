@@ -5,7 +5,6 @@ import re
 
 from vercel.blob import BlobClient
 from DocuAgent.models import DocuProcess, CustomUser
-from pymilvus import connections, utility, FieldSchema, CollectionSchema, DataType, Collection, MilvusClient
 
 
 
@@ -109,10 +108,12 @@ def delete_collection_related_data(folder_name: str) -> None:
         print(f"Vercel Blob deletion failed for folder {prefix}: {str(e)}")
         raise RuntimeError(f"Failed to delete folder from Vercel Blob: {str(e)}") from e
     finally:
+        from pymilvus import connections
         connections.disconnect("default")  
     
     try:
          # 3. Delete it from Milvus
+        from pymilvus import connections, utility
         connections.connect(
             alias="default",
             uri=settings.ZILLIZ_URI,
@@ -138,6 +139,7 @@ def create_zilliz_collection(collection_name: str, dim: int, project_id: str) ->
         print("Connecting to Zilliz via ORM...")
         
         # 1. Open ORM Connection securely
+        from pymilvus import connections, utility, FieldSchema, CollectionSchema, DataType, Collection
         connections.connect(
             alias="default",
             uri=settings.ZILLIZ_URI,

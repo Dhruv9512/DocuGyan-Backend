@@ -1,8 +1,6 @@
 import logging
 from typing import List, Union
 from django.conf import settings
-from langchain_community.vectorstores import Milvus
-from langchain_core.documents import Document
 
 from core.utils.utility import get_collection_name
 from core.utils.llm_engine import LLMEngine
@@ -37,7 +35,8 @@ class CorrectiveRetriever:
         self.embeddings = LLMEngine.get_huggingface_embedding_client()
         self._vectorstore = None
 
-    def _get_vectorstore(self) -> Milvus:
+    def _get_vectorstore(self) -> "Milvus":
+        from langchain_community.vectorstores import Milvus
         if self._vectorstore is not None:
             return self._vectorstore
 
@@ -56,8 +55,9 @@ class CorrectiveRetriever:
         )
         return self._vectorstore
     
-    def _execute_retrieval(self, top_k: int = 10) -> list[Document]:
+    def _execute_retrieval(self, top_k: int = 10) -> list:
         """Multi-Query Retrieval with Cosine Fusion & Metadata Filtering."""
+        from langchain_core.documents import Document
         vectorstore = self._get_vectorstore()
         unique_chunks = {}
         
@@ -177,7 +177,8 @@ class CorrectiveRetriever:
                 "grader_assessment": grade
             }
 
-    def _web_search_as_documents(self, query: str) -> list[Document]:
+    def _web_search_as_documents(self, query: str) -> list:
+        from langchain_core.documents import Document
         try:
             from langchain_community.tools.tavily_search import TavilySearchResults
 

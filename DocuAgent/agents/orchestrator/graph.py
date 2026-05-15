@@ -1,5 +1,4 @@
 from typing import Literal
-from langgraph.graph import StateGraph, START, END
 from psycopg2 import DatabaseError
 
 from DocuAgent.websocket.notifier import Notifier
@@ -212,6 +211,7 @@ class DocuPipelineOrchestrator:
     # Network Graph Construction
     # ==========================================
     def _build_graph(self):
+        from langgraph.graph import StateGraph, START, END
         graph = StateGraph(OrchestratorState)
 
         # 1. Add all nodes
