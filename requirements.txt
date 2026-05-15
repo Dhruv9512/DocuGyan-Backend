@@ -1,6 +1,8 @@
 # ============================================================
-# requirements.txt — conflict-resolved, uv-compatible
-# Python 3.11 | Django 5.2 | LangChain 1.x ecosystem
+# requirements.txt
+# Strategy: pin only packages with known stable versions.
+# All langchain-* integrations are unpinned so uv resolves
+# the correct compatible version automatically.
 # ============================================================
 
 # --- Core Web Framework ---
@@ -25,44 +27,40 @@ channels-redis==4.2.1
 daphne==4.1.2
 
 # --- AI & LLM Core ---
-# Do NOT pin langchain-core — let uv resolve the version that satisfies
-# both langchain and langchain-community automatically
+# Pin langchain + langchain-community only.
+# langchain-core is intentionally unpinned — uv resolves the version
+# that satisfies both langchain and langchain-community simultaneously.
 langchain==0.3.25
 langchain-community==0.3.24
 
 # --- LangChain Integrations ---
-langchain-google-genai==2.1.4
-langchain-groq==0.2.4
-langchain-huggingface==0.1.3
-langchain-tavily==0.1.6
-
-# --- Vector Store Integrations ---
-# langchain-milvus 0.1.x works with pymilvus 2.4.x
-langchain-milvus==0.1.8
-pymilvus==2.4.9
-
-# Use qdrant OR milvus — keep both if you genuinely use both
-qdrant-client==1.12.1
+# These are all unpinned — versions change frequently and uv will
+# pick the latest that is compatible with langchain-core above.
+langchain-google-genai
+langchain-groq
+langchain-huggingface
+langchain-milvus
+langchain-tavily
+langchain-cerebras
 
 # --- Multi-Agent Orchestration ---
-langgraph==0.2.60
-langgraph-checkpoint==2.0.10
+langgraph
 
 # --- Re-ranking ---
 flashrank==0.2.10
 rank-bm25==0.2.2
 
 # --- Provider SDKs ---
-# Pin groq SDK to match langchain-groq 0.2.4 requirement
-groq==0.13.1
-huggingface-hub==0.27.1
+groq
+huggingface-hub
+
+# --- Vector Databases ---
+qdrant-client
+pymilvus
 
 # --- Environment & Utilities ---
 python-dotenv==1.0.1
 requests==2.32.3
-# httpx pinned to avoid conflict between langchain and vercel-blob
-httpx==0.27.2
-anyio==4.7.0
 
 # --- Email ---
 django-anymail==12.0
@@ -72,15 +70,10 @@ google-auth==2.38.0
 
 # --- PDF / Document Extraction ---
 pymupdf==1.25.3
-llama-cloud==0.3.19
+llama-cloud
 
 # --- Vercel Blob Storage ---
-# vercel CLI package is a Node.js tool, not pip — remove it from Python deps
-# Use vercel-blob only
 vercel-blob==0.4.2
 
-# --- Cerebras (add after other langchain packages resolve) ---
-langchain-cerebras==0.4.1
-
-# --- Shared Models (git dependency — installed last to avoid resolver issues) ---
+# --- Shared Models (git dependency — installed last) ---
 git+https://github.com/dhruv9512/docugyan-shared-models.git@main#egg=docugyan-shared-models
