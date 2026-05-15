@@ -3,12 +3,14 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 
+
+from core.authentication import CookieJWTAuthentication
 from DocuChat.models import ChatSession, ChatMessage
 
 
 class ChatSessionListView(APIView):
     permission_classes = [IsAuthenticated]
-
+    authentication_classes = [CookieJWTAuthentication]
     def get(self, request):
         try:
             project_id = request.query_params.get('project_id')
@@ -39,7 +41,7 @@ class ChatSessionListView(APIView):
         
 class ChatSessionDetailView(APIView):
     permission_classes = [IsAuthenticated]
-
+    authentication_classes = [CookieJWTAuthentication]
     def get(self, request, session_id):
         try:
             session = ChatSession.objects.get(session_id=session_id, user=request.user)

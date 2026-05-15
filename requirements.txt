@@ -1,71 +1,86 @@
+# ============================================================
+# requirements.txt — conflict-resolved, uv-compatible
+# Python 3.11 | Django 5.2 | LangChain 1.x ecosystem
+# ============================================================
+
 # --- Core Web Framework ---
-django==5.2.11
-dj-database-url==3.1.2
-djangorestframework==3.16.1
-django-cors-headers==4.9.0
-asgiref==3.11.1
-sqlparse==0.5.5
-psycopg2-binary==2.9.11
-djangorestframework-simplejwt==5.5.1
-pyjwt==2.11.0
+django==5.2
+dj-database-url==2.3.0
+djangorestframework==3.15.2
+django-cors-headers==4.6.0
+asgiref==3.8.1
+sqlparse==0.5.3
+psycopg2-binary==2.9.10
+djangorestframework-simplejwt==5.4.0
+PyJWT==2.10.1
 
 # --- Background Tasks & Caching ---
-celery==5.6.2
-redis==7.2.0
-django-celery-results==2.6.0
+celery==5.4.0
+redis==5.2.1
+django-celery-results==2.5.1
 
-# --- Websocket Packages ---
-channels==4.3.2
-channels-redis==4.3.0
-daphne==4.2.1
+# --- WebSocket Packages ---
+channels==4.2.0
+channels-redis==4.2.1
+daphne==4.1.2
 
-# --- AI & LLM (Models & Frameworks) ---
-langchain==1.2.10
-langchain-core==1.2.14
-langchain-community==0.4.1
-langchain-google-genai==4.2.1
-langchain-groq==1.1.2
-langchain-huggingface==1.2.0
-langchain-milvus==0.3.3
-langchain-tavily==0.2.18
-langchain-cerebras==0.8.2
+# --- AI & LLM Core ---
+# Pin langchain-core first — everything else must satisfy it
+langchain-core==0.3.56
+langchain==0.3.25
+langchain-community==0.3.24
+
+# --- LangChain Integrations ---
+langchain-google-genai==2.1.4
+langchain-groq==0.2.4
+langchain-huggingface==0.1.3
+langchain-tavily==0.1.6
+
+# --- Vector Store Integrations ---
+# langchain-milvus 0.1.x works with pymilvus 2.4.x
+langchain-milvus==0.1.8
+pymilvus==2.4.9
+
+# Use qdrant OR milvus — keep both if you genuinely use both
+qdrant-client==1.12.1
 
 # --- Multi-Agent Orchestration ---
-langgraph==1.0.9
+langgraph==0.2.60
+langgraph-checkpoint==2.0.10
 
-# -----Re-ranking model----
+# --- Re-ranking ---
 flashrank==0.2.10
-rank_bm25==0.2.2
+rank-bm25==0.2.2
 
-groq==0.37.1
-huggingface-hub==1.8.0
-
-
-# --- Vector Database & PDF Processing ---
-qdrant-client==1.17.0
+# --- Provider SDKs ---
+# Pin groq SDK to match langchain-groq 0.2.4 requirement
+groq==0.13.1
+huggingface-hub==0.27.1
 
 # --- Environment & Utilities ---
-python-dotenv==1.2.1
-requests==2.32.5
+python-dotenv==1.0.1
+requests==2.32.3
+# httpx pinned to avoid conflict between langchain and vercel-blob
+httpx==0.27.2
+anyio==4.7.0
 
-# Brevo SMTP credentials (for email functionality)
-django-anymail==14.0
+# --- Email ---
+django-anymail==12.0
 
-# Google OAuth dependencies
-google-auth==2.20.0
+# --- Google Auth ---
+google-auth==2.38.0
 
+# --- PDF / Document Extraction ---
+pymupdf==1.25.3
+llama-cloud==0.3.19
 
-# Extraction related dependencies
-pymupdf==1.27.2
-llama-cloud==1.6.0
-
-
-# zilliz milvus dependencies
-pymilvus==2.6.11
-
-# Vercel Blob dependencies
+# --- Vercel Blob Storage ---
+# vercel CLI package is a Node.js tool, not pip — remove it from Python deps
+# Use vercel-blob only
 vercel-blob==0.4.2
-vercel==0.5.3
 
-# Adding shared model
+# --- Cerebras (add after other langchain packages resolve) ---
+langchain-cerebras==0.4.1
+
+# --- Shared Models (git dependency — installed last to avoid resolver issues) ---
 git+https://github.com/dhruv9512/docugyan-shared-models.git@main#egg=docugyan-shared-models
