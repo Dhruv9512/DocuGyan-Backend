@@ -1,7 +1,6 @@
 #!/bin/sh
 # ==============================================================
 # entrypoint.sh — web service startup
-# Static files are already collected during Docker build.
 # ==============================================================
 set -e
 
@@ -13,6 +12,11 @@ echo "-----> Checking required environment variables..."
 
 echo "-----> Running database migrations..."
 python manage.py migrate --noinput
+
+echo "-----> Collecting static files..."
+# collectstatic automatically creates the staticfiles/ folder if it doesn't exist.
+# All Django admin CSS/JS is copied into it from installed packages.
+python manage.py collectstatic --noinput --clear
 
 echo "-----> Starting Daphne..."
 exec daphne -b 0.0.0.0 -p 8000 DocuGyan.asgi:application
