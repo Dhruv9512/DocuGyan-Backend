@@ -292,14 +292,20 @@ CELERY_TASK_ROUTES = {
 }
 
 # --- WORKER OPTIMIZATION SETTINGS ---
-CELERY_WORKER_CONCURRENCY = 5      # was 2
-CELERY_WORKER_AUTOSCALE = (12, 6)   # was (4, 2)
+CELERY_WORKER_CONCURRENCY = 2 
+CELERY_WORKER_AUTOSCALE = (4, 2)   # was (4, 2)
 CELERY_BROKER_POOL_LIMIT = 5       # was 2
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_ACKS_LATE = True
 CELERY_TASK_ACKS_LATE = True
 CELERY_TASK_REJECT_ON_WORKER_LOST = True
 
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    'visibility_timeout': 3600,
+    'socket_timeout': 30,
+    'socket_connect_timeout': 30,
+    'retry_on_timeout': True,
+}
 
 AUTH_USER_MODEL = 'docu_model.CustomUser'
 
