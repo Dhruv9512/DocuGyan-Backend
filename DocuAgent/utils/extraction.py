@@ -10,7 +10,8 @@ import requests  # PyMuPDF
 
 # Import LLM Utility for Vision Calls
 from DocuAgent.utils.llm_calls import DocuAgentLLMCalls
-from DocuAgent.utils.utility import upload_to_vercel_blob, get_collection_name, get_request_session_with_blob_auth, sanitize_blob_filename
+from DocuAgent.utils.utility import upload_to_vercel_blob, get_request_session_with_blob_auth, sanitize_blob_filename
+from core.utils.utility import get_collection_name
 from DocuAgent.websocket.notifier import Notifier
 from django.conf import settings
 

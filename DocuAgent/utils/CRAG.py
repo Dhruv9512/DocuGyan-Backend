@@ -4,7 +4,7 @@ from django.conf import settings
 from langchain_community.vectorstores import Milvus
 from langchain_core.documents import Document
 
-from DocuAgent.utils.utility import get_collection_name
+from core.utils.utility import get_collection_name
 from core.utils.llm_engine import LLMEngine
 from DocuAgent.utils.llm_calls import DocuAgentLLMCalls
 from DocuAgent.schemas.llm_schemas import RetrievalGraderOutput

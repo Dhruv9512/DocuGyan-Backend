@@ -2,10 +2,10 @@
 from celery import shared_task
 from .models import DocuProcess
 from DocuAgent.agents.orchestrator.graph import build_docu_pipeline_orchestrator
-from DocuAgent.utils.utility import delete_collection_related_data, get_collection_name
+from DocuAgent.utils.utility import delete_collection_related_data
 from DocuGyan.celery import stop_task
-from pymilvus import connections, utility
-from django.conf import settings
+from core.utils.utility import get_collection_name
+
 import logging
 logger = logging.getLogger(__name__)
 

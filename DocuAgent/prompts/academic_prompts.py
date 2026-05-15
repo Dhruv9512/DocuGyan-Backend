@@ -828,10 +828,43 @@ SECTION_ROLE = """
     - Do NOT add diagrams or images.
 
     ##NUMBERING PROHIBITION:
-    - Arabic digits are banned in all prose — no numbered headings, lists, or sequences.Use instead: plain headings · a) b) c) · i. ii. iii. · written numbers · Step A, Step B
+    - Arabic digits are banned in all prose — no numbered headings, lists, or sequences. Use instead: plain headings · a) b) c) · i. ii. iii. · written numbers · Step A, Step B
     - Digits allowed only in: code blocks · math/LaTeX
 """.strip()
 
+
+# ── 7. Response Format Instructions ──────────────────────────────────────────
+SECTION_RESPONSE_FORMAT = """
+    ##RESPONSE INSTRUCTIONS:
+
+    -OUTPUT RULES:
+        * Output the answer ONLY. Do NOT include any thinking, reasoning, planning, or self-reflection.
+        * Do NOT preface the answer with phrases like "Here is my answer", "Let me explain", "Based on the context", etc.
+        * Begin directly with the answer content.
+
+    -FORMATTING STANDARDS:
+        * Write in clean, well-structured Markdown throughout.
+        * Use `##` and `###` headings to organize sections — never use numbered headings.
+        * Use **bold** for key terms and `inline code` for technical identifiers.
+
+    -TABLES:
+        * Use proper Markdown tables with aligned columns whenever comparing items or listing structured data.
+        * Every table MUST have a header row and a separator row (`| --- | --- |`).
+
+    -CODE BLOCKS:
+        * Wrap ALL code in fenced code blocks with the language specified: ```python, ```sql, ```bash, etc.
+        * Code must be complete, runnable, and properly indented.
+        * Never inline multi-line code — always use a fenced block.
+
+    -LATEX / MATH:
+        * Use `$ ... $` for inline math expressions.
+        * Use `$$ ... $$` on its own line for display (block) equations.
+        * Never write equations as plain text.
+
+    -LISTS:
+        * Use `-` for unordered lists and `a) b) c)` or `i. ii. iii.` for ordered sequences.
+        * Never use Arabic digits (`1.`, `2.`, `3.`) for list numbering in prose.
+""".strip()
 
 
 # =====================================================================================================
@@ -924,6 +957,7 @@ def build_drafter_user_prompt(
         section_kb,
         section_plan,
         section_category,
+        SECTION_RESPONSE_FORMAT,
     ]
 
     return "\n\n---\n\n".join(sections)
@@ -1146,7 +1180,8 @@ QUESTION_PLANNER_PROMPT = ChatPromptTemplate.from_messages([
     ])
 
 
-# ===========================================Diagram queary prompt: version 1=======================================
+
+# ===========================================Diagram queary prompt: version 3=======================================
 # DIAGRAM_INJECTOR_USER_PROMPT = """
 #     ## Original Question
 #     {question}
@@ -1155,160 +1190,82 @@ QUESTION_PLANNER_PROMPT = ChatPromptTemplate.from_messages([
 #     {draft}
 
 #     ## Your Task
-#     Read the draft above and inject diagram placeholders where a visual would DIRECTLY
-#     help a university student understand the concept being explained at that point.
+#     Inject diagram placeholders into the draft ONLY where a visual is essential —
+#     meaning the concept cannot be fully understood from prose alone.
 
 #     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#     PLACEMENT RULES
+#     ZERO-DIAGRAM RULE — CHECK THIS FIRST
 #     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#     1. Decide the number of diagrams based on content:
-#        - Simple / single-concept answer        → 1 diagram
-#        - Multi-step process or layered concepts → 2-3 diagrams
-
-#     2. Place each diagram ONLY where it genuinely aids understanding:
-#        - GOOD: a flowchart right after explaining a multi-step process
-#        - GOOD: an architecture diagram after describing system components
-#        - BAD : a generic diagram at the very start before any explanation
-#        - BAD : a diagram placed in the conclusion
-
-#     3. For each diagram, insert EXACTLY TWO lines on their own line, in this order:
-#        [Query: <specific descriptive search query>]
-#        {{diagram_N}}
-
-#        Where N starts at 1 and increments: {{diagram_1}}, {{diagram_2}}, {{diagram_3}}, etc.
-
-#     4. Query accuracy rules:
-#        - The query MUST describe the SPECIFIC concept in the paragraph directly above it.
-#        - Always include the diagram type: "flowchart", "architecture diagram",
-#          "sequence diagram", "memory layout", "block diagram", "ER diagram", etc.
-#        - BAD : [Query: computer science diagram]
-#        - GOOD: [Query: TCP three-way handshake SYN ACK sequence diagram]
-
-#     5. If you cannot form a specific, accurate query for a position — skip it entirely.
-#        Only place a diagram where you can write a precise, concept-specific query.
-
-#     6. NEVER place all diagram placeholders at the end of the answer.
-#     7. NEVER reuse the same placeholder ({{diagram_1}} can only appear once).
+#     If you find zero eligible positions after Step A:
+#     - Return the draft character-for-character as received. Nothing else.
+#     - Do not force a diagram. Zero is a valid and expected outcome.
 
 #     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#     EXAMPLE OF CORRECT INJECTION
+#     STEP A — IDENTIFY ELIGIBLE POSITIONS
 #     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#     Before injection:
-#         "The handshake proceeds in three steps as described below.
-#         After the connection is established, data transfer begins."
+#     For each CONTENT paragraph (skip headings, bullet labels, and one-line list items) write:
+#     [Section: <heading it belongs to> — <first five words of actual content>]
+#     Condition i  — directly explains the question or a key point: PASS / FAIL
+#     Condition ii — concept is significantly harder to grasp from prose alone: PASS / FAIL
+#     Condition iii — a simple internet search query would return a directly relevant diagram: PASS / FAIL
+#     Result: ELIGIBLE / SKIPPED
 
-#     After injection:
-#         "The handshake proceeds in three steps as described below.
-#         [Query: TCP three-way handshake SYN ACK sequence diagram]
-#         {{diagram_1}}
-#         After the connection is established, data transfer begins."
+#     HARD EXCLUSIONS — automatically FAIL regardless of content:
+#     - Any paragraph in the Introduction section.
+#     - Any paragraph in the Conclusion or Summary section.
+#     - The last paragraph of the draft — even if it is not labelled as a conclusion.
+#     - Any paragraph that appears AFTER the conclusion heading.
 
 #     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#     OUTPUT RULES (CRITICAL)
+#     STEP B — COUNT AND SELECT
 #     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#     - Return the COMPLETE draft with diagram placeholders injected.
-#     - Do NOT summarise, shorten, rewrite, or change any word of the draft.
-#     - Do NOT add any commentary before or after the draft.
-#     - Preserve ALL inline citation JSON arrays exactly as they appear — do not move,
-#       reformat, or remove any citation.
-#     - Only insert the [Query: ...] line and {{diagram_N}} placeholder — nothing else.
+#     Write:
+#     Total eligible: <number>
+#     Selected: <number> (maximum three — keep only those most central to the question)
+
+#     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#     STEP C — BUILD EACH QUERY
+#     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#     For each selected position write:
+#     diagram_1: <query>
+#     diagram_2: <query>  (if applicable)
+#     diagram_3: <query>  (if applicable)
+
+#     QUERY RULES:
+#     - Formula : <core concept> + <what it shows> + <visual type>
+#     - Keep it simple — three to six words only.
+#     - Use the most commonly searched form of the concept.
+#     - A student should be able to type this query into Google and find the diagram immediately.
+#     - If the query needs more than six words to be specific → the concept is too complex
+#         for a diagram here. Discard that position.
+
+#     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#     STEP D — OUTPUT
+#     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#     After completing Steps A, B, C above, write this exact line:
+
+#     ---END OF ANALYSIS---
+
+#     Then immediately output the complete draft with placeholders injected.
+#     No commentary before or after the draft. No preamble. No closing note.
+
+#     INJECTION FORMAT per position:
+#     [Query: <query from Step C>]
+#     {{diagram_N}}
+
+#     Inserted AFTER the eligible paragraph, BEFORE the next paragraph.
+#     N increments from one: {{diagram_1}}  {{diagram_2}}  {{diagram_3}}
+#     Each placeholder appears exactly once.
+
+#     DRAFT OUTPUT RULES:
+#     - Every word of the original draft must be present.
+#     - Do NOT summarise, shorten, rewrite, or omit any part.
+#     - The ONLY additions are [Query: ...] lines and {{diagram_N}} placeholders.
+#     - NEVER place a placeholder after the conclusion or at the end of the response.
+#     - Output must be longer than the input draft — if shorter, you have truncated.
 # """.strip()
 
-
-
-# ===========================================Diagram queary prompt: version 2=======================================
-# DIAGRAM_INJECTOR_USER_PROMPT = """
-# ## Original Question
-# {question}
-
-# ## Draft Answer
-# {draft}
-
-# ## Your Task
-# Inject diagram placeholders into the draft ONLY where a visual is essential —
-# meaning the concept cannot be fully understood from prose alone.
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ZERO-DIAGRAM RULE — CHECK THIS FIRST
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# If you find zero eligible positions after Step A:
-#   - Return the draft character-for-character as received. Nothing else.
-#   - Do not force a diagram. Zero is a valid and expected outcome.
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# STEP A — IDENTIFY ELIGIBLE POSITIONS
-# (complete this fully before moving to Step B)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Read each paragraph. A diagram is eligible ONLY if ALL three conditions hold:
-
-#   i.  The paragraph describes a process, flow, architecture, hierarchy,
-#       cycle, state machine, or component relationship.
-#   ii. The concept is significantly harder to grasp from prose alone —
-#       a visual would reduce cognitive load, not just decorate the page.
-#   iii.You can form a query specific enough that searching it on the internet
-#       would return a diagram directly relevant to that paragraph's concept.
-
-#   If ANY condition fails → skip that paragraph. No diagram.
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# STEP B — COUNT AND SELECT
-# (complete this fully before moving to Step C)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#   - Maximum three diagrams. Minimum zero.
-#   - If more than three are eligible → keep only the three most central
-#     to the question's main concept. Discard the rest.
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# STEP C — BUILD EACH QUERY
-# (complete this fully before moving to Step D)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# For each eligible position construct the query using this formula:
-
-#   <specific concept from the paragraph> + <specific process or relationship> + <visual type>
-
-#   QUERY VALIDITY CONTRACT:
-#   - Every term must come directly from the paragraph it follows.
-#   - The visual type must describe what the diagram shows, not just the topic.
-#   - The query must be specific enough that two different concepts
-#     could NOT produce the same query string.
-#   - Minimum five words.
-#   - If the query does not pass all conditions → discard that position entirely.
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# STEP D — INJECT
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# For each selected position insert EXACTLY these two lines immediately
-# AFTER the eligible paragraph, BEFORE the next paragraph:
-
-#   [Query: <your query from Step C>]
-#   {{diagram_N}}
-
-# PLACEHOLDER FORMAT (exact characters required):
-#   - Two left curly braces + diagram_N + two right curly braces.
-#   - No spaces inside the braces. No single braces.
-#   - N increments from one: {{diagram_1}}  {{diagram_2}}  {{diagram_3}}
-
-# PLACEMENT RULES:
-#   - After the paragraph that earns it — never before it.
-#   - Never in the introduction before any explanation has been given.
-#   - Never in the conclusion or summary section.
-#   - Never mid-sentence or mid-list.
-#   - Each placeholder appears exactly once.
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# OUTPUT CONTRACT — NON-NEGOTIABLE
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#   - Return the COMPLETE draft. Every word of the original must be present.
-#   - Do NOT summarise, shorten, rewrite, paraphrase, or omit any part.
-#   - Do NOT add commentary, preamble, or closing notes.
-#   - The ONLY permitted additions are [Query: ...] lines and {{diagram_N}} placeholders.
-#   - LENGTH CHECK: your output must be longer than the input draft, never shorter.
-#     If it is shorter → you have truncated. Rewrite in full before returning.
-# """.strip()
-
-
-
-# ===========================================Diagram queary prompt: version 3=======================================
+# ===========================================Diagram queary prompt: version 4=======================================
 DIAGRAM_INJECTOR_USER_PROMPT = """
     ## Original Question
     {question}
@@ -1319,6 +1276,26 @@ DIAGRAM_INJECTOR_USER_PROMPT = """
     ## Your Task
     Inject diagram placeholders into the draft ONLY where a visual is essential —
     meaning the concept cannot be fully understood from prose alone.
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    ##STRICT OUTPUT RULES — READ BEFORE ANYTHING ELSE
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    -NO THINKING:
+        * Do NOT output your reasoning, analysis, step results, or self-reflection.
+        * Do NOT output Step A, Step B, Step C, or Step D results.
+        * Do NOT write "Here is the draft", "I have injected", or any commentary.
+        * Your ENTIRE output must be the modified draft — nothing before it, nothing after it.
+
+    -NO DUPLICATE DIAGRAMS:
+        * Every [Query: ...] string must be unique — never repeat the same query twice.
+        * Every {{diagram_N}} placeholder must be unique — never repeat the same placeholder twice.
+        * If two eligible positions would produce the same query → keep only the more central one.
+
+    -NO DRAFT CHANGES:
+        * Every single word of the original draft must be present and unchanged.
+        * Do NOT rewrite, summarise, shorten, reorder, or omit any part of the draft.
+        * The ONLY permitted additions are [Query: ...] lines and {{diagram_N}} placeholders.
+        * Output must be longer than the input draft — if it is shorter, you have truncated.
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     ZERO-DIAGRAM RULE — CHECK THIS FIRST
@@ -1365,16 +1342,14 @@ DIAGRAM_INJECTOR_USER_PROMPT = """
     - A student should be able to type this query into Google and find the diagram immediately.
     - If the query needs more than six words to be specific → the concept is too complex
         for a diagram here. Discard that position.
+    - Each query must be distinct — no two queries may describe the same concept or visual.
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     STEP D — OUTPUT
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    After completing Steps A, B, C above, write this exact line:
-
-    ---END OF ANALYSIS---
-
-    Then immediately output the complete draft with placeholders injected.
-    No commentary before or after the draft. No preamble. No closing note.
+    After completing Steps A, B, C internally (do NOT print them):
+    - Output the complete modified draft immediately with placeholders injected.
+    - No commentary before or after the draft. No preamble. No closing note.
 
     INJECTION FORMAT per position:
     [Query: <query from Step C>]
@@ -1383,18 +1358,13 @@ DIAGRAM_INJECTOR_USER_PROMPT = """
     Inserted AFTER the eligible paragraph, BEFORE the next paragraph.
     N increments from one: {{diagram_1}}  {{diagram_2}}  {{diagram_3}}
     Each placeholder appears exactly once.
-
-    DRAFT OUTPUT RULES:
-    - Every word of the original draft must be present.
-    - Do NOT summarise, shorten, rewrite, or omit any part.
-    - The ONLY additions are [Query: ...] lines and {{diagram_N}} placeholders.
-    - NEVER place a placeholder after the conclusion or at the end of the response.
-    - Output must be longer than the input draft — if shorter, you have truncated.
 """.strip()
+
 
 DIAGRAM_INJECTOR_PROMPT = ChatPromptTemplate.from_messages([
     ("human", DIAGRAM_INJECTOR_USER_PROMPT)
 ])
+
 
 
 

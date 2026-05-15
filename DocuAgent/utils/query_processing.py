@@ -8,7 +8,8 @@ import requests
 # Import your Utilities!
 from DocuAgent.utils.llm_calls import DocuAgentLLMCalls
 from DocuAgent.utils.extraction import build_DocuExtractor 
-from DocuAgent.utils.utility import upload_to_vercel_blob, get_collection_name, get_request_session_with_blob_auth, sanitize_blob_filename
+from DocuAgent.utils.utility import upload_to_vercel_blob, get_request_session_with_blob_auth, sanitize_blob_filename
+from core.utils.utility import get_collection_name
 
 from DocuAgent.schemas.llm_schemas import RefinedBatch
 from DocuAgent.websocket.notifier import Notifier

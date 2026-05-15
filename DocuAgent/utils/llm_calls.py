@@ -11,10 +11,51 @@ from DocuAgent.prompts.academic_prompts import build_drafter_user_prompt, RETRIE
 logger = logging.getLogger(__name__)
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# MODEL POOL — May 2026
+#
+# PROVIDER        MODEL                                        SPEED      TIER
+# ─────────────────────────────────────────────────────────────────────────────
+# Groq            openai/gpt-oss-120b                          500 t/s    Production ✅ ← strongest text
+# Groq            llama-3.3-70b-versatile                      280 t/s    Production ✅
+# Groq            meta-llama/llama-4-scout-17b-16e-instruct    460 t/s    Preview  ⚠️ ← vision+text
+# Groq            qwen/qwen3-32b                               400 t/s    Preview    ⚠️
+# Groq            openai/gpt-oss-20b                          1000 t/s    Production ✅
+# Groq            llama-3.1-8b-instant                         560 t/s    Production ✅
+# HuggingFace     Qwen/Qwen2.5-72B-Instruct                     —         Free       ✅ ← strongest HF text
+# HuggingFace     meta-llama/Llama-3.1-70B-Instruct             —         Free       ✅
+# HuggingFace     meta-llama/Llama-3.2-11B-Vision-Instruct      —         Free       ✅ ← vision fallback
+# HuggingFace     meta-llama/Llama-3.2-3B-Vision-Instruct       —         Free       ✅
+# HuggingFace     meta-llama/Llama-3.2-1B-Vision-Instruct       —         Free       ✅
+# Cerebras        gpt-oss-120b                                3000 t/s    Production ✅ ← fastest+strongest (text-only)
+#
+# DEPRECATION NOTES (May 2026):
+#   REMOVED: llama-4-maverick     (Groq, deprecated → openai/gpt-oss-120b)
+#            qwen-qwq-32b         (Groq, deprecated → qwen/qwen3-32b)
+#            gemma2-9b-it         (Groq, deprecated → llama-3.1-8b-instant)
+#            llama3.1-8b          (Cerebras, deprecates May 27 2026 → excluded)
+#            qwen-3-235b-a22b-instruct-2507 (Cerebras Preview, deprecates May 27 2026 → excluded)
+#            zai-glm-4.7          (Cerebras Preview, not for production → excluded)
+#            llama-3.3-70b        (Cerebras, previously deprecated Feb 16 2026)
+#            qwen-3-32b           (Cerebras, previously deprecated Feb 16 2026)
+#
+# NOTE: Cerebras is TEXT-ONLY (no multimodal/vision). Do NOT add to vision chain.
+#       Only gpt-oss-120b is a safe long-term production model on Cerebras as of May 2026.
+# ══════════════════════════════════════════════════════════════════════════════
+
+
 class DocuAgentLLMCalls:
     """
     DocuAgent Specialist: Handles specialized workflows for Document Intelligence.
     Uses LLMEngine to fetch clients and implements resilient fallback logic.
+
+    Provider fallback order for TEXT chains (strongest → weakest):
+        Groq (gpt-oss-120b) → Groq (llama-3.3-70b) → Cerebras (gpt-oss-120b)
+        → Groq (qwen3-32b) → Groq (gpt-oss-20b) → HuggingFace (Qwen2.5-72B)
+        → HuggingFace (Llama-3.1-70B) → Groq (llama-3.1-8b-instant) [last resort]
+
+    Provider fallback order for VISION chain (multimodal only — Cerebras excluded):
+        Groq (llama-4-scout) → HuggingFace (Qwen2.5-VL-72B) → ...
     """
 
     # Primary chain
@@ -49,21 +90,14 @@ class DocuAgentLLMCalls:
 
             This wrapper pipes the raw dict through the Pydantic constructor so
             callers always receive a properly typed object regardless of provider.
-
-        Usage:
-            fallback_hf = DocuAgentLLMCalls._make_hf_structured(
-                LLMEngine.get_huggingface_chat_client(...), RetrievalGraderOutput
-            )
         """
         from langchain_core.runnables import RunnableLambda
 
         raw_chain = llm.with_structured_output(schema_class, method="json_mode")
 
         def _parse(result):
-            # If HF returned a dict, parse it into the Pydantic model
             if isinstance(result, dict):
                 return schema_class(**result)
-            # Already the right type (e.g. Groq returning Pydantic directly)
             return result
 
         return raw_chain | RunnableLambda(_parse)
@@ -77,16 +111,6 @@ class DocuAgentLLMCalls:
         """
         Builds a single refiner chain by composing REFINE_QUESTIONS_PROMPT with
         a structured-output LLM.
-
-        Extracted from _get_refiner_chain to avoid re-defining the helper
-        function on every call and to make it independently testable.
-
-        Args:
-            llm:Any LangChain-compatible chat model.
-            use_json_mode: If True, uses method="json_mode" (needed for some HF models).
-
-        Returns:
-            A Runnable that accepts {"questions": str} and returns RefinedBatch.
         """
         structured = (
             llm.with_structured_output(RefinedBatch, method="json_mode")
@@ -103,42 +127,77 @@ class DocuAgentLLMCalls:
     def _get_vision_chain(cls, use_backup: bool = False):
         """
         Lazy-initializes the vision fallback chain once per pool.
-        ALL models must be vision-capable (multimodal) — text-only models cannot
-        process image payloads and must never appear in this chain.
+        ALL models must be vision-capable (multimodal).
+        Cerebras is TEXT-ONLY and is intentionally excluded from this chain.
 
-        Model strategy:
-        1. PRIMARY:    llama-4-scout-17b-16e-instruct          (Groq)
-        2. FALLBACK 1: llama-4-maverick-17b-128e-instruct      (Groq)
-        3. FALLBACK 2: Llama-3.2-90B-Vision-Instruct           (HuggingFace)
-        4. FALLBACK 3: Llama-3.2-11B-Vision-Instruct           (HuggingFace)
-        5. FALLBACK 4: Llama-3.2-3B-Vision-Instruct            (HuggingFace)  ← smallest, last resort
-        6. FALLBACK 5: Llama-3.2-1B-Vision-Instruct            (HuggingFace)  ← absolute last resort
+        Ordered strongest → weakest (OCR / document-understanding priority):
+        ── Groq (fast, preview, multimodal) ─────────────────────────────────
+        1. PRIMARY:    meta-llama/llama-4-scout-17b-16e-instruct
+                       460 t/s | MoE 17Bx16E | native early-fusion vision
+                       Best free vision model on Groq; handles charts, tables,
+                       dense text layouts at speed.
+
+        ── HuggingFace (free serverless, strongest OCR/VLM quality) ─────────
+        2. FALLBACK 1: Qwen/Qwen2.5-VL-72B-Instruct
+                       72B dense VLM | SOTA on DocVQA, ChartQA, OCRBench
+                       Best free model for scanned PDFs, tables, mixed layouts.
+
+        3. FALLBACK 2: Qwen/Qwen2-VL-72B-Instruct
+                       72B | predecessor to Qwen2.5-VL; still top-tier OCR.
+
+        4. FALLBACK 3: meta-llama/Llama-3.2-90B-Vision-Instruct
+                       90B dense | strongest Llama vision model.
+
+        5. FALLBACK 4: meta-llama/Llama-3.2-11B-Vision-Instruct
+                       11B | fastest reliable HF vision fallback.
+
+        6. FALLBACK 5: meta-llama/Llama-3.2-3B-Vision-Instruct
+                       3B | lightweight, use only when larger models fail.
+
+        7. FALLBACK 6: meta-llama/Llama-3.2-1B-Vision-Instruct
+                       1B | absolute last resort — degraded OCR quality.
         """
         if use_backup and cls._vision_chain_backup is not None:
             return cls._vision_chain_backup
         if not use_backup and cls._vision_chain is not None:
             return cls._vision_chain
 
+        # ── Groq: fastest, native multimodal ──────────────────────────────
         primary    = LLMEngine.get_groq_client(
-            model_name="meta-llama/llama-4-scout-17b-16e-instruct", temperature=0.0, use_backup=use_backup
-        )
-        fallback_1 = LLMEngine.get_groq_client(
-            model_name="meta-llama/llama-4-maverick-17b-128e-instruct", temperature=0.0, use_backup=use_backup
-        )
-        fallback_2 = LLMEngine.get_huggingface_chat_client(
-            model_name="meta-llama/Llama-3.2-90B-Vision-Instruct", temperature=0.0, use_backup=use_backup
-        )
-        fallback_3 = LLMEngine.get_huggingface_chat_client(
-            model_name="meta-llama/Llama-3.2-11B-Vision-Instruct", temperature=0.0, use_backup=use_backup
-        )
-        fallback_4 = LLMEngine.get_huggingface_chat_client(
-            model_name="meta-llama/Llama-3.2-3B-Vision-Instruct", temperature=0.0, use_backup=use_backup
-        )
-        fallback_5 = LLMEngine.get_huggingface_chat_client(
-            model_name="meta-llama/Llama-3.2-1B-Vision-Instruct", temperature=0.0, use_backup=use_backup
+            model_name="meta-llama/llama-4-scout-17b-16e-instruct",
+            temperature=0.0, use_backup=use_backup
         )
 
-        chain = primary.with_fallbacks([fallback_1, fallback_2, fallback_3, fallback_4, fallback_5])
+        # ── HuggingFace: strongest free VLMs for OCR/document parsing ─────
+        fallback_1 = LLMEngine.get_huggingface_chat_client(
+            model_name="Qwen/Qwen2.5-VL-72B-Instruct",
+            temperature=0.0, use_backup=use_backup
+        )
+        fallback_2 = LLMEngine.get_huggingface_chat_client(
+            model_name="Qwen/Qwen2-VL-72B-Instruct",
+            temperature=0.0, use_backup=use_backup
+        )
+        fallback_3 = LLMEngine.get_huggingface_chat_client(
+            model_name="meta-llama/Llama-3.2-90B-Vision-Instruct",
+            temperature=0.0, use_backup=use_backup
+        )
+        fallback_4 = LLMEngine.get_huggingface_chat_client(
+            model_name="meta-llama/Llama-3.2-11B-Vision-Instruct",
+            temperature=0.0, use_backup=use_backup
+        )
+        fallback_5 = LLMEngine.get_huggingface_chat_client(
+            model_name="meta-llama/Llama-3.2-3B-Vision-Instruct",
+            temperature=0.0, use_backup=use_backup
+        )
+        fallback_6 = LLMEngine.get_huggingface_chat_client(
+            model_name="meta-llama/Llama-3.2-1B-Vision-Instruct",
+            temperature=0.0, use_backup=use_backup
+        )
+
+        chain = primary.with_fallbacks([
+            fallback_1, fallback_2, fallback_3,
+            fallback_4, fallback_5, fallback_6,
+        ])
 
         if use_backup:
             cls._vision_chain_backup = chain
@@ -176,36 +235,45 @@ class DocuAgentLLMCalls:
         """
         Lazy-initializes the planner fallback chain once per pool.
 
-        Model strategy (temperature=0.1):
-        1. PRIMARY:    llama-3.3-70b-versatile                 (Groq)
-        2. FALLBACK 1: llama3-groq-70b-8192-tool-use-preview   (Groq)
-        3. FALLBACK 2: qwen-qwq-32b                            (Groq)
-        4. FALLBACK 3: gemma2-9b-it                            (Groq)
-        5. FALLBACK 4: llama-3.1-70b-versatile                 (Groq)
-        6. FALLBACK 5: Qwen/Qwen2.5-72B-Instruct               (HuggingFace)
+        Ordered strongest → weakest (temperature=0.1):
+        1. PRIMARY:    openai/gpt-oss-120b              (Groq,     500 t/s  — strongest reasoning)
+        2. FALLBACK 1: llama-3.3-70b-versatile          (Groq,     280 t/s  — best Llama)
+        3. FALLBACK 2: gpt-oss-120b                     (Cerebras, 3000 t/s — same weights, much faster)
+        4. FALLBACK 3: qwen/qwen3-32b                   (Groq,     400 t/s)
+        5. FALLBACK 4: openai/gpt-oss-20b               (Groq,     1000 t/s — fast production)
+        6. FALLBACK 5: Qwen/Qwen2.5-72B-Instruct        (HuggingFace — strongest free text)
+        7. FALLBACK 6: meta-llama/Llama-3.1-70B-Instruct (HuggingFace)
+        8. FALLBACK 7: llama-3.1-8b-instant             (Groq — last resort)
         """
         if use_backup and cls._planner_chain_backup is not None:
             return cls._planner_chain_backup
         if not use_backup and cls._planner_chain is not None:
             return cls._planner_chain
 
-        primary    = LLMEngine.get_groq_client(
+        primary      = LLMEngine.get_groq_client(
+            model_name="openai/gpt-oss-120b", temperature=0.1, use_backup=use_backup
+        )
+        fallback_1   = LLMEngine.get_groq_client(
             model_name="llama-3.3-70b-versatile", temperature=0.1, use_backup=use_backup
         )
-        fallback_1 = LLMEngine.get_groq_client(
-            model_name="llama3-groq-70b-8192-tool-use-preview", temperature=0.1, use_backup=use_backup
+        # Cerebras: same gpt-oss-120b weights served at ~6× Groq's speed on WSE-3
+        fallback_2   = LLMEngine.get_cerebras_client(
+            model_name="gpt-oss-120b", temperature=0.1, use_backup=use_backup
         )
-        fallback_2 = LLMEngine.get_groq_client(
-            model_name="qwen-qwq-32b", temperature=0.1, use_backup=use_backup
+        fallback_3   = LLMEngine.get_groq_client(
+            model_name="qwen/qwen3-32b", temperature=0.1, use_backup=use_backup
         )
-        fallback_3 = LLMEngine.get_groq_client(
-            model_name="gemma2-9b-it", temperature=0.1, use_backup=use_backup
+        fallback_4   = LLMEngine.get_groq_client(
+            model_name="openai/gpt-oss-20b", temperature=0.1, use_backup=use_backup
         )
-        fallback_4 = LLMEngine.get_groq_client(
-            model_name="llama-3.1-70b-versatile", temperature=0.1, use_backup=use_backup
-        )
-        hf_llm = LLMEngine.get_huggingface_chat_client(
+        hf_llm_72b   = LLMEngine.get_huggingface_chat_client(
             model_name="Qwen/Qwen2.5-72B-Instruct", temperature=0.1, use_backup=use_backup
+        )
+        hf_llm_70b   = LLMEngine.get_huggingface_chat_client(
+            model_name="meta-llama/Llama-3.1-70B-Instruct", temperature=0.1, use_backup=use_backup
+        )
+        fallback_7   = LLMEngine.get_groq_client(
+            model_name="llama-3.1-8b-instant", temperature=0.1, use_backup=use_backup
         )
 
         chain = (
@@ -215,7 +283,9 @@ class DocuAgentLLMCalls:
                 QUESTION_PLANNER_PROMPT | fallback_2.with_structured_output(PlannerOutput),
                 QUESTION_PLANNER_PROMPT | fallback_3.with_structured_output(PlannerOutput),
                 QUESTION_PLANNER_PROMPT | fallback_4.with_structured_output(PlannerOutput),
-                QUESTION_PLANNER_PROMPT | cls._make_hf_structured(hf_llm, PlannerOutput),
+                QUESTION_PLANNER_PROMPT | cls._make_hf_structured(hf_llm_72b, PlannerOutput),
+                QUESTION_PLANNER_PROMPT | cls._make_hf_structured(hf_llm_70b, PlannerOutput),
+                QUESTION_PLANNER_PROMPT | fallback_7.with_structured_output(PlannerOutput),
             ])
         )
 
@@ -267,36 +337,44 @@ class DocuAgentLLMCalls:
         """
         Lazy-initializes the C-RAG grader fallback chain once per pool.
 
-        Model strategy (temperature=0.0 — fully deterministic):
-        1. PRIMARY:    llama-3.3-70b-versatile                 (Groq)
-        2. FALLBACK 1: llama3-groq-70b-8192-tool-use-preview   (Groq)
-        3. FALLBACK 2: qwen-qwq-32b                            (Groq)
-        4. FALLBACK 3: gemma2-9b-it                            (Groq)
-        5. FALLBACK 4: llama-3.1-70b-versatile                 (Groq)
-        6. FALLBACK 5: Qwen/Qwen2.5-72B-Instruct               (HuggingFace)
+        Ordered strongest → weakest (temperature=0.0 — fully deterministic):
+        1. PRIMARY:    openai/gpt-oss-120b              (Groq,     500 t/s  — strongest reasoning)
+        2. FALLBACK 1: llama-3.3-70b-versatile          (Groq,     280 t/s)
+        3. FALLBACK 2: gpt-oss-120b                     (Cerebras, 3000 t/s — same weights, much faster)
+        4. FALLBACK 3: qwen/qwen3-32b                   (Groq,     400 t/s)
+        5. FALLBACK 4: openai/gpt-oss-20b               (Groq,     1000 t/s)
+        6. FALLBACK 5: Qwen/Qwen2.5-72B-Instruct        (HuggingFace — strongest free text)
+        7. FALLBACK 6: meta-llama/Llama-3.1-70B-Instruct (HuggingFace)
+        8. FALLBACK 7: llama-3.1-8b-instant             (Groq — last resort)
         """
         if use_backup and cls._grader_chain_backup is not None:
             return cls._grader_chain_backup
         if not use_backup and cls._grader_chain is not None:
             return cls._grader_chain
 
-        primary    = LLMEngine.get_groq_client(
+        primary      = LLMEngine.get_groq_client(
+            model_name="openai/gpt-oss-120b", temperature=0.0, use_backup=use_backup
+        )
+        fallback_1   = LLMEngine.get_groq_client(
             model_name="llama-3.3-70b-versatile", temperature=0.0, use_backup=use_backup
         )
-        fallback_1 = LLMEngine.get_groq_client(
-            model_name="llama3-groq-70b-8192-tool-use-preview", temperature=0.0, use_backup=use_backup
+        fallback_2   = LLMEngine.get_cerebras_client(
+            model_name="gpt-oss-120b", temperature=0.0, use_backup=use_backup
         )
-        fallback_2 = LLMEngine.get_groq_client(
-            model_name="qwen-qwq-32b", temperature=0.0, use_backup=use_backup
+        fallback_3   = LLMEngine.get_groq_client(
+            model_name="qwen/qwen3-32b", temperature=0.0, use_backup=use_backup
         )
-        fallback_3 = LLMEngine.get_groq_client(
-            model_name="gemma2-9b-it", temperature=0.0, use_backup=use_backup
+        fallback_4   = LLMEngine.get_groq_client(
+            model_name="openai/gpt-oss-20b", temperature=0.0, use_backup=use_backup
         )
-        fallback_4 = LLMEngine.get_groq_client(
-            model_name="llama-3.1-70b-versatile", temperature=0.0, use_backup=use_backup
-        )
-        hf_llm = LLMEngine.get_huggingface_chat_client(
+        hf_llm_72b   = LLMEngine.get_huggingface_chat_client(
             model_name="Qwen/Qwen2.5-72B-Instruct", temperature=0.0, use_backup=use_backup
+        )
+        hf_llm_70b   = LLMEngine.get_huggingface_chat_client(
+            model_name="meta-llama/Llama-3.1-70B-Instruct", temperature=0.0, use_backup=use_backup
+        )
+        fallback_7   = LLMEngine.get_groq_client(
+            model_name="llama-3.1-8b-instant", temperature=0.0, use_backup=use_backup
         )
 
         chain = (
@@ -306,7 +384,9 @@ class DocuAgentLLMCalls:
                 RETRIEVAL_GRADER_PROMPT | fallback_2.with_structured_output(RetrievalGraderOutput),
                 RETRIEVAL_GRADER_PROMPT | fallback_3.with_structured_output(RetrievalGraderOutput),
                 RETRIEVAL_GRADER_PROMPT | fallback_4.with_structured_output(RetrievalGraderOutput),
-                RETRIEVAL_GRADER_PROMPT | cls._make_hf_structured(hf_llm, RetrievalGraderOutput),
+                RETRIEVAL_GRADER_PROMPT | cls._make_hf_structured(hf_llm_72b, RetrievalGraderOutput),
+                RETRIEVAL_GRADER_PROMPT | cls._make_hf_structured(hf_llm_70b, RetrievalGraderOutput),
+                RETRIEVAL_GRADER_PROMPT | fallback_7.with_structured_output(RetrievalGraderOutput),
             ])
         )
 
@@ -358,13 +438,15 @@ class DocuAgentLLMCalls:
         """
         Lazy-initializes the drafter fallback chain once per pool.
 
-        Model strategy (temperature=0.4 — creative but grounded):
-        1. PRIMARY:    llama-3.3-70b-versatile    (Groq)
-        2. FALLBACK 1: qwen-qwq-32b               (Groq)
-        3. FALLBACK 2: llama-3.1-70b-versatile    (Groq)
-        4. FALLBACK 3: gemma2-9b-it               (Groq)
-        5. FALLBACK 4: Qwen/Qwen2.5-72B-Instruct  (HuggingFace)
-        6. FALLBACK 5: llama-3.1-8b-instant       (Groq)  ← last resort
+        Ordered strongest → weakest (temperature=0.4 — creative but grounded):
+        1. PRIMARY:    openai/gpt-oss-120b              (Groq,     500 t/s  — strongest reasoning)
+        2. FALLBACK 1: llama-3.3-70b-versatile          (Groq,     280 t/s  — best Llama output)
+        3. FALLBACK 2: gpt-oss-120b                     (Cerebras, 3000 t/s — same weights, much faster)
+        4. FALLBACK 3: qwen/qwen3-32b                   (Groq,     400 t/s  — quality output)
+        5. FALLBACK 4: Qwen/Qwen2.5-72B-Instruct        (HuggingFace — strongest free text)
+        6. FALLBACK 5: meta-llama/Llama-3.1-70B-Instruct (HuggingFace)
+        7. FALLBACK 6: openai/gpt-oss-20b               (Groq,     1000 t/s — fast production)
+        8. FALLBACK 7: llama-3.1-8b-instant             (Groq — last resort)
         """
         if use_backup and cls._drafter_chain_backup is not None:
             return cls._drafter_chain_backup
@@ -372,21 +454,27 @@ class DocuAgentLLMCalls:
             return cls._drafter_chain
 
         primary    = LLMEngine.get_groq_client(
-            model_name="llama-3.3-70b-versatile", temperature=0.4, use_backup=use_backup
+            model_name="openai/gpt-oss-120b", temperature=0.4, use_backup=use_backup
         )
         fallback_1 = LLMEngine.get_groq_client(
-            model_name="qwen-qwq-32b", temperature=0.4, use_backup=use_backup
+            model_name="llama-3.3-70b-versatile", temperature=0.4, use_backup=use_backup
         )
-        fallback_2 = LLMEngine.get_groq_client(
-            model_name="llama-3.1-70b-versatile", temperature=0.4, use_backup=use_backup
+        fallback_2 = LLMEngine.get_cerebras_client(
+            model_name="gpt-oss-120b", temperature=0.4, use_backup=use_backup
         )
         fallback_3 = LLMEngine.get_groq_client(
-            model_name="gemma2-9b-it", temperature=0.4, use_backup=use_backup
+            model_name="qwen/qwen3-32b", temperature=0.4, use_backup=use_backup
         )
         fallback_4 = LLMEngine.get_huggingface_chat_client(
             model_name="Qwen/Qwen2.5-72B-Instruct", temperature=0.4, use_backup=use_backup
         )
-        fallback_5 = LLMEngine.get_groq_client(
+        fallback_5 = LLMEngine.get_huggingface_chat_client(
+            model_name="meta-llama/Llama-3.1-70B-Instruct", temperature=0.4, use_backup=use_backup
+        )
+        fallback_6 = LLMEngine.get_groq_client(
+            model_name="openai/gpt-oss-20b", temperature=0.4, use_backup=use_backup
+        )
+        fallback_7 = LLMEngine.get_groq_client(
             model_name="llama-3.1-8b-instant", temperature=0.4, use_backup=use_backup
         )
 
@@ -396,6 +484,8 @@ class DocuAgentLLMCalls:
             fallback_3,
             fallback_4,
             fallback_5,
+            fallback_6,
+            fallback_7,
         ])
 
         if use_backup:
@@ -455,13 +545,15 @@ class DocuAgentLLMCalls:
         """
         Lazy-initializes the question refiner fallback chain once per pool.
 
-        Model strategy (temperature=0.0 — deterministic cleanup):
-        1. PRIMARY:    llama-3.3-70b-versatile    (Groq)
-        2. FALLBACK 1: qwen-qwq-32b               (Groq)
-        3. FALLBACK 2: gemma2-9b-it               (Groq)
-        4. FALLBACK 3: llama-3.1-70b-versatile    (Groq)
-        5. FALLBACK 4: Qwen/Qwen2.5-72B-Instruct  (HuggingFace)
-        6. FALLBACK 5: llama-3.1-8b-instant       (Groq)  ← last resort
+        Ordered strongest → weakest (temperature=0.0 — deterministic cleanup):
+        1. PRIMARY:    openai/gpt-oss-120b              (Groq,     500 t/s  — strongest reasoning)
+        2. FALLBACK 1: llama-3.3-70b-versatile          (Groq,     280 t/s)
+        3. FALLBACK 2: gpt-oss-120b                     (Cerebras, 3000 t/s — same weights, much faster)
+        4. FALLBACK 3: qwen/qwen3-32b                   (Groq,     400 t/s)
+        5. FALLBACK 4: Qwen/Qwen2.5-72B-Instruct        (HuggingFace — strongest free text)
+        6. FALLBACK 5: meta-llama/Llama-3.1-70B-Instruct (HuggingFace)
+        7. FALLBACK 6: openai/gpt-oss-20b               (Groq,     1000 t/s — fast production)
+        8. FALLBACK 7: llama-3.1-8b-instant             (Groq — last resort)
         """
         if use_backup and cls._refiner_chain_backup is not None:
             return cls._refiner_chain_backup
@@ -469,21 +561,27 @@ class DocuAgentLLMCalls:
             return cls._refiner_chain
 
         primary    = LLMEngine.get_groq_client(
-            model_name="llama-3.3-70b-versatile", temperature=0.0, use_backup=use_backup
+            model_name="openai/gpt-oss-120b", temperature=0.0, use_backup=use_backup
         )
         fallback_1 = LLMEngine.get_groq_client(
-            model_name="qwen-qwq-32b", temperature=0.0, use_backup=use_backup
+            model_name="llama-3.3-70b-versatile", temperature=0.0, use_backup=use_backup
         )
-        fallback_2 = LLMEngine.get_groq_client(
-            model_name="gemma2-9b-it", temperature=0.0, use_backup=use_backup
+        fallback_2 = LLMEngine.get_cerebras_client(
+            model_name="gpt-oss-120b", temperature=0.0, use_backup=use_backup
         )
         fallback_3 = LLMEngine.get_groq_client(
-            model_name="llama-3.1-70b-versatile", temperature=0.0, use_backup=use_backup
+            model_name="qwen/qwen3-32b", temperature=0.0, use_backup=use_backup
         )
-        hf_llm = LLMEngine.get_huggingface_chat_client(
+        hf_llm_72b = LLMEngine.get_huggingface_chat_client(
             model_name="Qwen/Qwen2.5-72B-Instruct", temperature=0.0, use_backup=use_backup
         )
-        fallback_5 = LLMEngine.get_groq_client(
+        hf_llm_70b = LLMEngine.get_huggingface_chat_client(
+            model_name="meta-llama/Llama-3.1-70B-Instruct", temperature=0.0, use_backup=use_backup
+        )
+        fallback_6 = LLMEngine.get_groq_client(
+            model_name="openai/gpt-oss-20b", temperature=0.0, use_backup=use_backup
+        )
+        fallback_7 = LLMEngine.get_groq_client(
             model_name="llama-3.1-8b-instant", temperature=0.0, use_backup=use_backup
         )
 
@@ -491,8 +589,10 @@ class DocuAgentLLMCalls:
             cls._make_refiner_chain(fallback_1),
             cls._make_refiner_chain(fallback_2),
             cls._make_refiner_chain(fallback_3),
-            REFINE_QUESTIONS_PROMPT | cls._make_hf_structured(hf_llm, RefinedBatch),
-            cls._make_refiner_chain(fallback_5),
+            REFINE_QUESTIONS_PROMPT | cls._make_hf_structured(hf_llm_72b, RefinedBatch),
+            REFINE_QUESTIONS_PROMPT | cls._make_hf_structured(hf_llm_70b, RefinedBatch),
+            cls._make_refiner_chain(fallback_6),
+            cls._make_refiner_chain(fallback_7),
         ])
 
         if use_backup:
@@ -546,13 +646,15 @@ class DocuAgentLLMCalls:
         """
         Lazy-initializes the diagram injector fallback chain once per pool.
 
-        Model strategy (temperature=0.2 — mostly deterministic, slight flexibility):
-        1. PRIMARY:    llama-3.3-70b-versatile    (Groq)
-        2. FALLBACK 1: qwen-qwq-32b               (Groq)
-        3. FALLBACK 2: llama-3.1-70b-versatile    (Groq)
-        4. FALLBACK 3: gemma2-9b-it               (Groq)
-        5. FALLBACK 4: Qwen/Qwen2.5-72B-Instruct  (HuggingFace)
-        6. FALLBACK 5: llama-3.1-8b-instant       (Groq)  ← last resort
+        Ordered strongest → weakest (temperature=0.2 — mostly deterministic):
+        1. PRIMARY:    openai/gpt-oss-120b              (Groq,     500 t/s  — strongest reasoning)
+        2. FALLBACK 1: llama-3.3-70b-versatile          (Groq,     280 t/s)
+        3. FALLBACK 2: gpt-oss-120b                     (Cerebras, 3000 t/s — same weights, much faster)
+        4. FALLBACK 3: qwen/qwen3-32b                   (Groq,     400 t/s)
+        5. FALLBACK 4: Qwen/Qwen2.5-72B-Instruct        (HuggingFace — strongest free text)
+        6. FALLBACK 5: meta-llama/Llama-3.1-70B-Instruct (HuggingFace)
+        7. FALLBACK 6: openai/gpt-oss-20b               (Groq,     1000 t/s — fast production)
+        8. FALLBACK 7: llama-3.1-8b-instant             (Groq — last resort)
         """
         if use_backup and cls._diagram_chain_backup is not None:
             return cls._diagram_chain_backup
@@ -560,31 +662,38 @@ class DocuAgentLLMCalls:
             return cls._diagram_chain
 
         primary    = LLMEngine.get_groq_client(
-            model_name="llama-3.3-70b-versatile", temperature=0.2, use_backup=use_backup
+            model_name="openai/gpt-oss-120b", temperature=0.2, use_backup=use_backup
         )
         fallback_1 = LLMEngine.get_groq_client(
-            model_name="qwen-qwq-32b", temperature=0.2, use_backup=use_backup
+            model_name="llama-3.3-70b-versatile", temperature=0.2, use_backup=use_backup
         )
-        fallback_2 = LLMEngine.get_groq_client(
-            model_name="llama-3.1-70b-versatile", temperature=0.2, use_backup=use_backup
+        fallback_2 = LLMEngine.get_cerebras_client(
+            model_name="gpt-oss-120b", temperature=0.2, use_backup=use_backup
         )
         fallback_3 = LLMEngine.get_groq_client(
-            model_name="gemma2-9b-it", temperature=0.2, use_backup=use_backup
+            model_name="qwen/qwen3-32b", temperature=0.2, use_backup=use_backup
         )
         fallback_4 = LLMEngine.get_huggingface_chat_client(
             model_name="Qwen/Qwen2.5-72B-Instruct", temperature=0.2, use_backup=use_backup
         )
-        fallback_5 = LLMEngine.get_groq_client(
+        fallback_5 = LLMEngine.get_huggingface_chat_client(
+            model_name="meta-llama/Llama-3.1-70B-Instruct", temperature=0.2, use_backup=use_backup
+        )
+        fallback_6 = LLMEngine.get_groq_client(
+            model_name="openai/gpt-oss-20b", temperature=0.2, use_backup=use_backup
+        )
+        fallback_7 = LLMEngine.get_groq_client(
             model_name="llama-3.1-8b-instant", temperature=0.2, use_backup=use_backup
         )
 
-        # Compose prompt into chain so callers invoke with {"question": ..., "draft": ...}
         chain = DIAGRAM_INJECTOR_PROMPT | primary.with_fallbacks([
             DIAGRAM_INJECTOR_PROMPT | fallback_1,
             DIAGRAM_INJECTOR_PROMPT | fallback_2,
             DIAGRAM_INJECTOR_PROMPT | fallback_3,
             DIAGRAM_INJECTOR_PROMPT | fallback_4,
             DIAGRAM_INJECTOR_PROMPT | fallback_5,
+            DIAGRAM_INJECTOR_PROMPT | fallback_6,
+            DIAGRAM_INJECTOR_PROMPT | fallback_7,
         ])
 
         if use_backup:
@@ -601,7 +710,7 @@ class DocuAgentLLMCalls:
         at contextually appropriate positions.
 
         Retry strategy:
-        - Primary chain  : primary + 5 fallbacks via LangChain .with_fallbacks()
+        - Primary chain  : primary + 7 fallbacks via LangChain .with_fallbacks()
         - Backup chain   : separate model pool via use_backup=True
         - Total failure  : returns None — caller keeps the original draft
         """

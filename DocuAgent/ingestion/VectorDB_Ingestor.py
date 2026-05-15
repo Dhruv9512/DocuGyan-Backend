@@ -11,7 +11,8 @@ from langchain_core.documents import Document
 from langchain_community.vectorstores import Milvus
 
 # Adjust import based on your actual project structure
-from DocuAgent.utils.utility import get_collection_name, create_zilliz_collection, get_request_session_with_blob_auth
+from DocuAgent.utils.utility import create_zilliz_collection, get_request_session_with_blob_auth
+from core.utils.utility import get_collection_name
 from core.utils.llm_engine import LLMEngine
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from DocuAgent.websocket.notifier import Notifier

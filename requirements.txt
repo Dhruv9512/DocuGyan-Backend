@@ -28,10 +28,14 @@ langchain-groq==1.1.2
 langchain-huggingface==1.2.0
 langchain-milvus==0.3.3
 langchain-tavily==0.2.18
+langchain-cerebras==0.8.2
 
 # --- Multi-Agent Orchestration ---
 langgraph==1.0.9
 
+# -----Re-ranking model----
+flashrank==0.2.10
+rank_bm25==0.2.2
 
 groq==0.37.1
 huggingface-hub==1.8.0

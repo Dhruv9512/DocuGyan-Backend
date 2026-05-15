@@ -7,7 +7,7 @@ from core.authentication import CookieJWTAuthentication
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q
 
-from DocuAgent.utils.utility import get_collection_name
+from core.utils.utility import get_collection_name
 from .models import DocuProcess
 from .tasks import run_agentic_pipeline_task, process_project_deletion
 from django.db import transaction
@@ -97,7 +97,6 @@ class DocuProcessDataView(APIView):
 
     def get(self, request):
         project_id = request.query_params.get('project_id')
-        # user_uuid = request.query_params.get('user_uuid')
         user_uuid = str(request.user.user_uuid)
 
         if not project_id:
@@ -113,6 +112,7 @@ class DocuProcessDataView(APIView):
                 "user_uuid": str(docu_process.user_uuid),
                 "title": docu_process.title,
                 "description": docu_process.description,
+                "extracted_doc_urls": docu_process.extracted_doc_urls,
                 "reference_urls": docu_process.reference_urls,
                 "question_urls": docu_process.question_urls,
                 "result_urls": docu_process.results_url,
@@ -141,8 +141,9 @@ class DocuProcessListView(APIView):
         docu_processes = DocuProcess.objects.filter(user_uuid=user_uuid).exclude(
             status__in=[
                 DocuProcess.StatusChoices.DELETING, 
-                DocuProcess.StatusChoices.DELETED
+                DocuProcess.StatusChoices.DELETED,
             ]
+
         ).values(
             'project_id', 'user_uuid', 'title', 'description', 
             'reference_urls', 'question_urls', 'results_url', 

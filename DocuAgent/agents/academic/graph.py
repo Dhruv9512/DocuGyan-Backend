@@ -15,9 +15,9 @@ from DocuAgent.schemas.agent_schemas import (
 # Import the helper utility functions
 from DocuAgent.utils.utility import (
     get_request_session_with_blob_auth,
-    upload_to_vercel_blob,
-    get_collection_name
+    upload_to_vercel_blob
 )
+from core.utils.utility import get_collection_name
 
 # Import Graph framework
 from langgraph.graph import StateGraph, START, END
