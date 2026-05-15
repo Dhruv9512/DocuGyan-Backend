@@ -1,11 +1,10 @@
 #!/bin/sh
 # ==============================================================
 # entrypoint.sh — web service startup
+# Static files are already collected during Docker build.
 # ==============================================================
 set -e
 
-# Suppress LangChain/LangGraph deprecation warnings during startup
-# so they don't clutter migration output (they are not errors)
 export PYTHONWARNINGS="ignore::DeprecationWarning,ignore::PendingDeprecationWarning"
 
 echo "-----> Checking required environment variables..."
@@ -15,11 +14,5 @@ echo "-----> Checking required environment variables..."
 echo "-----> Running database migrations..."
 python manage.py migrate --noinput
 
-echo "-----> Collecting static files..."
-python manage.py collectstatic --noinput
-
-# Restore normal warnings for the running app
-unset PYTHONWARNINGS
-
-echo "-----> Starting Daphne (ASGI server)..."
+echo "-----> Starting Daphne..."
 exec daphne -b 0.0.0.0 -p 8000 DocuGyan.asgi:application
