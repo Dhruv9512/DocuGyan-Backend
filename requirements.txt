@@ -1,8 +1,5 @@
 # ============================================================
-# requirements.txt
-# Strategy: pin only packages with known stable versions.
-# All langchain-* integrations are unpinned so uv resolves
-# the correct compatible version automatically.
+# requirements.txt — Python 3.12
 # ============================================================
 
 # --- Core Web Framework ---
@@ -27,15 +24,11 @@ channels-redis==4.2.1
 daphne==4.1.2
 
 # --- AI & LLM Core ---
-# Pin langchain + langchain-community only.
-# langchain-core is intentionally unpinned — uv resolves the version
-# that satisfies both langchain and langchain-community simultaneously.
-langchain==0.3.25
-langchain-community==0.3.24
+langchain
+langchain-community>=0.3.28
+langchain-classic
 
 # --- LangChain Integrations ---
-# These are all unpinned — versions change frequently and uv will
-# pick the latest that is compatible with langchain-core above.
 langchain-google-genai
 langchain-groq
 langchain-huggingface
@@ -45,6 +38,9 @@ langchain-cerebras
 
 # --- Multi-Agent Orchestration ---
 langgraph
+
+# --- Prompt Management ---
+banks
 
 # --- Re-ranking ---
 flashrank==0.2.10
@@ -58,9 +54,12 @@ huggingface-hub
 qdrant-client
 pymilvus
 
+# --- Static Files ---
+whitenoise==6.9.0
+
 # --- Environment & Utilities ---
 python-dotenv==1.0.1
-requests==2.32.3
+requests>=2.32.5
 
 # --- Email ---
 django-anymail==12.0
@@ -73,9 +72,8 @@ pymupdf==1.25.3
 llama-cloud
 
 # --- Vercel Blob Storage ---
-# vercel provides vercel.blob.BlobClient used in DocuAgent/utils/utility.py
 vercel==0.5.3
 vercel-blob==0.4.2
 
-# --- Shared Models (git dependency — installed last) ---
+# --- Shared Models ---
 git+https://github.com/dhruv9512/docugyan-shared-models.git@main#egg=docugyan-shared-models

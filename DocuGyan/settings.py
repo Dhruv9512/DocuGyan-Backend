@@ -133,6 +133,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -170,7 +171,7 @@ DATABASES = {
     "default": dj_database_url.parse(
         os.environ.get("DATABASE_URL"),
         conn_max_age=600,
-        ssl_require=True
+        ssl_require=not DEBUG 
     )
 }
 
@@ -209,7 +210,8 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
@@ -230,21 +232,25 @@ CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [CELERY_BROKER_URL],
+            "hosts": [{"address": CELERY_BROKER_URL, "ssl": True}],
         },
     },
 }
 
 # --- CELERY SETTINGS ---
 CELERY_BROKER_URL = CELERY_BROKER_URL
-CELERY_RESULT_BACKEND = None
+CELERY_RESULT_BACKEND = "django-db"
+CELERY_TASK_IGNORE_RESULT = False 
 
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json' 
-CELERY_TIMEZONE = "UTC"
+CELERY_TIMEZONE = "Asia/Kolkata"
 CELERY_ENABLE_UTC = True
-CELERY_TASK_IGNORE_RESULT = True
+# Add after CELERY_BROKER_URL line at the top
+CELERY_BROKER_USE_SSL = {"ssl_cert_reqs": None}
+CELERY_REDIS_BACKEND_USE_SSL = {"ssl_cert_reqs": None}
+
 
 # --- QUEUE & ROUTING CONFIGURATION ---
 CELERY_TASK_DEFAULT_QUEUE = "DocuGyan"
