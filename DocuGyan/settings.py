@@ -59,9 +59,17 @@ CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL")
 
 
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")]
-CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(",")]
-CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.environ.get("CSRF_TRUSTED_ORIGINS", "http://localhost:3000").split(",")]
+CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:3000,https://docugyan.netlify.app").split(",") if o.strip()]
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.environ.get("CSRF_TRUSTED_ORIGINS", "http://localhost:3000,https://docugyan.netlify.app").split(",") if o.strip()]
 CORS_ALLOW_CREDENTIALS = True
+
+# Cookie settings for cross-domain auth via proxy
+SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SECURE = True
+CSRF_COOKIE_HTTPONLY = False  # Usually False for SPA CSRF handling
+SESSION_COOKIE_HTTPONLY = True
 CORS_URLS_REGEX = r'^/.*$'
 SECURE_CROSS_ORIGIN_OPENER_POLICY = None
 
