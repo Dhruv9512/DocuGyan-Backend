@@ -58,10 +58,18 @@ VERCEL_BLOB_TOKEN = os.environ.get("BLOB_READ_WRITE_TOKEN")
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL")
 
 
-ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
-CORS_ALLOWED_ORIGINS = os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(",")
-CSRF_TRUSTED_ORIGINS = os.environ.get("CSRF_TRUSTED_ORIGINS", "http://localhost:3000").split(",")
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")]
+CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(",")]
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.environ.get("CSRF_TRUSTED_ORIGINS", "http://localhost:3000").split(",")]
 CORS_ALLOW_CREDENTIALS = True
+CORS_URLS_REGEX = r'^/.*$'
+SECURE_CROSS_ORIGIN_OPENER_POLICY = None
+
+SESSION_COOKIE_SAMESITE = 'None'
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SAMESITE = 'None'
+CSRF_COOKIE_SECURE = True
+
 
 # Brevo
 EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "anymail.backends.sendinblue.EmailBackend")
@@ -316,6 +324,14 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.UserRateThrottle',
+        'rest_framework.throttling.AnonRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'user': '100000/day',
+        'anon': '10000/day',
+    },
 }
 
 
