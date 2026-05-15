@@ -46,6 +46,9 @@ langchain-cerebras
 # --- Multi-Agent Orchestration ---
 langgraph
 
+# --- Prompt Management ---
+banks
+
 # --- Re-ranking ---
 flashrank==0.2.10
 rank-bm25==0.2.2
