@@ -25,8 +25,8 @@ channels-redis==4.2.1
 daphne==4.1.2
 
 # --- AI & LLM Core ---
-# langchain==0.3.25 requires langchain-core>=0.3.58 — must match exactly
-langchain-core==0.3.58
+# Do NOT pin langchain-core — let uv resolve the version that satisfies
+# both langchain and langchain-community automatically
 langchain==0.3.25
 langchain-community==0.3.24
 
