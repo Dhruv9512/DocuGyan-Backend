@@ -1,7 +1,5 @@
 # ============================================================
 # Unified Dockerfile — Daphne web server OR Celery worker
-# collectstatic runs at BUILD time so static files are baked
-# into the image (Django admin CSS works out of the box)
 # ============================================================
 
 # Stage 1: Pull uv binary
@@ -36,14 +34,6 @@ RUN uv pip install --no-cache -r requirements.txt
 
 # --- Application code ---
 COPY . .
-
-# --- Collect static files at build time ---
-# A dummy SECRET_KEY is used only for this build step.
-# The real SECRET_KEY from Render env vars is used at runtime.
-# DATABASE_URL is NOT needed for collectstatic — it only copies files.
-RUN SECRET_KEY=build-only-dummy-key-not-used-at-runtime \
-    DJANGO_SETTINGS_MODULE=DocuGyan.settings \
-    python manage.py collectstatic --noinput
 
 # --- Entrypoint ---
 COPY entrypoint.sh .
