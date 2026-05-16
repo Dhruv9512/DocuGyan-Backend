@@ -34,7 +34,8 @@ def jwt_cookie_opts():
     return {
         "httponly": True,
         "secure": True,
-        "samesite": "None",
+        "samesite": "Lax",
+        "path": "/",
     }
 
 def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
@@ -43,8 +44,8 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str):
     response.set_cookie(REFRESH_COOKIE, refresh_token, max_age=REFRESH_MAX_AGE, **opts)
 
 def clear_auth_cookies(response: Response):
-    response.delete_cookie(ACCESS_COOKIE)
-    response.delete_cookie(REFRESH_COOKIE)
+    response.delete_cookie(ACCESS_COOKIE, path='/')
+    response.delete_cookie(REFRESH_COOKIE, path='/')
 
 def issue_tokens_for_user(user: CustomUser):
     refresh = RefreshToken.for_user(user)
