@@ -65,10 +65,6 @@ CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.environ.get("CSRF_TRUSTED_ORIGINS"
 CORS_ALLOW_CREDENTIALS = True
 
 
-CORS_URLS_REGEX = r'^/.*$'
-SECURE_CROSS_ORIGIN_OPENER_POLICY = None
-
-
 
 # Brevo
 EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "anymail.backends.sendinblue.EmailBackend")

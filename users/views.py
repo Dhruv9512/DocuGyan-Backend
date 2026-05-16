@@ -34,7 +34,7 @@ def jwt_cookie_opts():
     return {
         "httponly": True,
         "secure": True,
-        "samesite": "None",
+        "samesite": "Lax",
         "path": "/",
     }
 
