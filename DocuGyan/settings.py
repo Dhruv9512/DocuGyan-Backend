@@ -59,6 +59,7 @@ CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL")
 
 
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")]
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:3000,https://docugyan.netlify.app").split(",") if o.strip()]
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.environ.get("CSRF_TRUSTED_ORIGINS", "http://localhost:3000,https://docugyan.netlify.app").split(",") if o.strip()]
 CORS_ALLOW_CREDENTIALS = True
