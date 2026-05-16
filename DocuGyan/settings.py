@@ -63,13 +63,7 @@ CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS"
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.environ.get("CSRF_TRUSTED_ORIGINS", "http://localhost:3000,https://docugyan.netlify.app").split(",") if o.strip()]
 CORS_ALLOW_CREDENTIALS = True
 
-# Cookie settings for cross-domain auth via proxy
-SESSION_COOKIE_SAMESITE = 'Lax'
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SAMESITE = 'Lax'
-CSRF_COOKIE_SECURE = True
-CSRF_COOKIE_HTTPONLY = False  # Usually False for SPA CSRF handling
-SESSION_COOKIE_HTTPONLY = True
+
 CORS_URLS_REGEX = r'^/.*$'
 SECURE_CROSS_ORIGIN_OPENER_POLICY = None
 
