@@ -235,7 +235,7 @@ CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [{"address": CELERY_BROKER_URL, "ssl": True}],
+            "hosts": [CELERY_BROKER_URL], 
         },
     },
 }
