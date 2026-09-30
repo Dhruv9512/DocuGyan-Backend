@@ -76,4 +76,4 @@ vercel==0.5.3
 vercel-blob==0.4.2
 
 # --- Shared Models ---
-git+https://github.com/dhruv9512/docugyan-shared-models.git@main#egg=docugyan-shared-models
+docugyan-shared-models @ git+https://github.com/dhruv9512/docugyan-shared-models.git@main
