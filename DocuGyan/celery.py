@@ -1,12 +1,12 @@
 import os
 from celery import Celery
-from django.conf import settings
 
 # Set the default Django settings module for the 'celery' program.
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'DocuGyan.settings')
 
 # Initialize Celery app for DocuGyan
-app = Celery('DocuGyan', broker=settings.CELERY_BROKER_URL)
+# Broker URL is read lazily from CELERY_BROKER_URL via config_from_object below
+app = Celery('DocuGyan')
 
 app.config_from_object('django.conf:settings', namespace='CELERY')
 

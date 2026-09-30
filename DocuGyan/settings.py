@@ -171,10 +171,11 @@ WSGI_APPLICATION = 'DocuGyan.wsgi.application'
 
 # Database
 DATABASES = {
-    "default": dj_database_url.parse(
-        os.environ.get("DATABASE_URL"),
+    # Falls back to SQLite when DATABASE_URL is unset (e.g. during Vercel's collectstatic build step)
+    "default": dj_database_url.config(
+        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
         conn_max_age=600,
-        ssl_require=not DEBUG 
+        ssl_require=not DEBUG and bool(os.environ.get("DATABASE_URL")),
     )
 }
 
