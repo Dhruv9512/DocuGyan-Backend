@@ -25,14 +25,13 @@ daphne==4.1.2
 
 # --- AI & LLM Core ---
 langchain
-langchain-community>=0.3.28
+langchain-community==0.4.1
 langchain-classic
 
 # --- LangChain Integrations ---
 langchain-google-genai
 langchain-groq
 langchain-huggingface
-langchain-milvus
 langchain-tavily
 langchain-cerebras
 
@@ -51,7 +50,6 @@ groq
 huggingface-hub
 
 # --- Vector Databases ---
-qdrant-client
 pymilvus
 
 # --- Static Files ---

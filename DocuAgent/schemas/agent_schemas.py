@@ -3,7 +3,7 @@ from typing import Annotated, Any
 import operator 
 from typing import TypedDict
 
-from qdrant_client.models import Dict
+from typing import Dict
 
 from DocuAgent.schemas.llm_schemas import PlannerOutput, RetrievalGraderOutput
 
