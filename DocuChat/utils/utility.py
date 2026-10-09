@@ -14,7 +14,7 @@ def rerank_docs(query: str, docs:list):
             rerank_request = RerankRequest(query=query, passages=passages)
             reranked = reranker.rerank(rerank_request)
             reranked.sort(key=lambda x: x["score"], reverse=True)
-            reranked = reranked[:settings.RERANK_K]  
+            reranked = reranked[:settings.RERANK_K]
 
             # Rebuild Document list in reranked order
             reranked_docs = [
@@ -28,7 +28,7 @@ def rerank_docs(query: str, docs:list):
             return reranked_docs
         except Exception as e:
             print(f"Error during reranking: {e}")
-            return docs 
+            return docs
         
 
 def is_token_limit_error(e: Exception) -> bool:
