@@ -1,5 +1,7 @@
 import logging
 import re
+import tempfile
+import os
 
 
 # Validation imports
@@ -33,7 +35,7 @@ logging.basicConfig(level=logging.INFO)
 log_format = '%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s'
 logger = logging.getLogger("AcademicAgent")
 logger.setLevel(logging.DEBUG)
-handler = logging.FileHandler("AcademicAgent.log")
+handler = logging.FileHandler(os.path.join(tempfile.gettempdir(), "AcademicAgent.log"))
 handler.setFormatter(logging.Formatter(log_format))
 logger.addHandler(handler)
 
