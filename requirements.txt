@@ -67,11 +67,9 @@ google-auth==2.38.0
 
 # --- PDF / Document Extraction ---
 pymupdf==1.25.3
-llama-cloud
 
 # --- Vercel Blob Storage ---
 vercel==0.5.3
-vercel-blob==0.4.2
 
 # --- Shared Models ---
 docugyan-shared-models @ git+https://github.com/dhruv9512/docugyan-shared-models.git@main
